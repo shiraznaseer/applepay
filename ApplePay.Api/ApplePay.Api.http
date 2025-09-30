@@ -1,0 +1,9 @@
+@ApplePay.Api_HostAddress = https://localhost:7249
+# @ApplePay.Api_HostAddress = http://localhost:5217
+
+
+### Apple Pay Authorize (POST)
+POST {{ApplePay.Api_HostAddress}}/api/payment-process
+Accept: application/json
+Content-Type: application/json
+

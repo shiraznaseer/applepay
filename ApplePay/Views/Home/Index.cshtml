@@ -1,0 +1,141 @@
+﻿@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Apple Pay Integration</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .apple-pay-button {
+            background-color: black;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .fa-apple {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Apple Pay Integration</h1>
+    <button class="apple-pay-button" onclick="onApplePayButtonClicked()">
+        <i class="fa fa-apple"></i> Pay
+    </button>
+    <script>
+        async function onApplePayButtonClicked() {
+            if (!window.PaymentRequest) {
+                alert("Payment Request API is not supported on this browser.");
+                return;
+            }
+
+            try {
+                const paymentMethodData = [{
+                    supportedMethods: "https://apple.com/apple-pay",
+                    data: {
+                        version: 3,
+                        merchantIdentifier: "merchant.com.tamarran.applepaytesting", // Still required
+                        merchantCapabilities: ["supports3DS"],
+                        supportedNetworks: ["amex", "discover", "masterCard", "visa"],
+                        countryCode: "BH"
+                    }
+                }];
+
+                const paymentDetails = {
+                    total: {
+                        label: "Tamarran Payment",
+                        amount: { value: "1.00", currency: "BHD" }
+                    }
+                };
+
+                const paymentOptions = {
+                    requestPayerName: false,
+                    requestBillingAddress: false,
+                    requestPayerEmail: false,
+                    requestPayerPhone: false,
+                    requestShipping: false,
+                    shippingType: "shipping"
+                };
+
+                const request = new PaymentRequest(paymentMethodData, paymentDetails, paymentOptions);
+
+                request.onpaymentmethodchange = event => {
+                    event.updateWith({ total: paymentDetails.total });
+                };
+
+                request.onshippingoptionchange = event => {
+                    event.updateWith({ total: paymentDetails.total });
+                };
+
+                request.onshippingaddresschange = event => {
+                    event.updateWith({});
+                };
+
+                const response = await request.show();
+
+                const paymentToken = response.details?.paymentData;
+
+                if (!paymentToken) {
+                    alert("No payment token received from Apple Pay.");
+                    return;
+                }
+
+                // ✅ Send token to your backend (Credimax processes it)
+                try {
+                    const res = await fetch('/api/applepay/process-payment', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ token: paymentToken })
+                    });
+
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        console.error("Server error:", errorText);
+                        alert("Server returned error: " + errorText);
+                        return;
+                    }
+
+                    const result = await res.json();
+                    alert(`Payment processed successfully.\nResult: ${JSON.stringify(result, null, 2)}`);
+                } catch (err) {
+                    console.error("Error sending token to server:", err);
+                    alert("Error sending token to backend: " + err.message);
+                }
+
+                await response.complete("success");
+            } catch (e) 
+            {
+                console.error("Payment flow error or cancelled:", e);
+                alert("Payment failed or was cancelled.\nDetails: " + e.message);
+            }
+        }
+    </script>
+
+
+</body>
+</html>
+
+
