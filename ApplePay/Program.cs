@@ -4,15 +4,41 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Polly;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container
+
+// Bind options for ZATCA
+builder.Services.Configure<ApplePay.Api.Options.ZatcaOptions>(
+    builder.Configuration.GetSection(ApplePay.Api.Options.ZatcaOptions.SectionName));
+
+// Register controllers
+builder.Services.AddControllers();
+
+// IHttpClientFactory support
 builder.Services.AddHttpClient();
-builder.Services.AddEndpointsApiExplorer();
+
+// ZATCA typed HttpClient
+builder.Services.AddHttpClient<ApplePay.Api.Services.ZatcaClient>((sp, client) =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ApplePay.Api.Options.ZatcaOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "https://gw-fatoora.zatca.gov.sa" : opts.BaseUrl!.TrimEnd('/');
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(10, Math.Min(300, opts.HttpTimeoutSeconds)));
+    client.DefaultRequestHeaders.Accept.Clear();
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+})
+.AddPolicyHandler(Polly.Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(60)))
+.AddTransientHttpErrorPolicy(builder => Polly.Extensions.Http.HttpPolicyExtensions
+    .HandleTransientHttpError()
+    .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Min(2 * retryAttempt, 10))));
+
+// ZATCA services
+builder.Services.AddSingleton<ApplePay.Api.Services.IZatcaService, ApplePay.Api.Services.ZatcaService>();
 builder.Services.AddSwaggerGen();
 builder.Services.Configure<CredimaxOptions>(
     builder.Configuration.GetSection(CredimaxOptions.SectionName));
