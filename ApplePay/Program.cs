@@ -1,13 +1,16 @@
-﻿using ApplePay.Models;
+using ApplePay.Models;
+using ApplePay.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Polly;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +18,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Bind options for ZATCA
 builder.Services.Configure<ApplePay.Api.Options.ZatcaOptions>(
     builder.Configuration.GetSection(ApplePay.Api.Options.ZatcaOptions.SectionName));
+
+// Bind options for Tabby
+builder.Services.Configure<TabbyOptions>(
+    builder.Configuration.GetSection(TabbyOptions.SectionName));
 
 // Register controllers
 builder.Services.AddControllers();
@@ -36,6 +43,18 @@ builder.Services.AddHttpClient<ApplePay.Api.Services.ZatcaClient>((sp, client) =
 .AddTransientHttpErrorPolicy(builder => Polly.Extensions.Http.HttpPolicyExtensions
     .HandleTransientHttpError()
     .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Min(2 * retryAttempt, 10))));
+
+// Tabby typed HttpClient
+builder.Services.AddHttpClient<TabbyService>((sp, client) =>
+{
+    var opts = sp.GetRequiredService<IOptions<TabbyOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "https://api.tabby.ai" : opts.BaseUrl!.TrimEnd('/');
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.DefaultRequestHeaders.Accept.Clear();
+    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", opts.SecretKey);
+});
 
 // ZATCA services
 builder.Services.AddSingleton<ApplePay.Api.Services.IZatcaService, ApplePay.Api.Services.ZatcaService>();

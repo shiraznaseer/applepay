@@ -1,5 +1,3 @@
-using Polly;
-
 namespace ApplePay.Api;
 
 public class Program
@@ -12,36 +10,11 @@ public class Program
         builder.Services.Configure<ApplePay.Api.Options.CredimaxOptions>(
             builder.Configuration.GetSection(ApplePay.Api.Options.CredimaxOptions.SectionName));
 
-        // Bind options for ZATCA
-        builder.Services.Configure<ApplePay.Api.Options.ZatcaOptions>(
-            builder.Configuration.GetSection(ApplePay.Api.Options.ZatcaOptions.SectionName));
-
         // Register controllers
         builder.Services.AddControllers();
 
         // IHttpClientFactory support
         builder.Services.AddHttpClient();
-
-        // ZATCA typed HttpClient
-        builder.Services.AddHttpClient<ApplePay.Api.Services.ZatcaClient>((sp, client) =>
-        {
-            var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ApplePay.Api.Options.ZatcaOptions>>().Value;
-            var baseUrl = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "https://gw-fatoora.zatca.gov.sa" : opts.BaseUrl!.TrimEnd('/');
-            client.BaseAddress = new Uri(baseUrl);
-            client.Timeout = TimeSpan.FromSeconds(Math.Max(10, Math.Min(300, opts.HttpTimeoutSeconds)));
-            client.DefaultRequestHeaders.Accept.Clear();
-            client.DefaultRequestHeaders.Add("Accept", "application/json");
-        })
-        .AddPolicyHandler(Polly.Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(60)))
-        .AddTransientHttpErrorPolicy(builder => Polly.Extensions.Http.HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Min(2 * retryAttempt, 10))));
-
-        // ZATCA services
-        builder.Services.AddSingleton<ApplePay.Api.Services.IZatcaService, ApplePay.Api.Services.ZatcaService>();
-        builder.Services.AddSingleton<ApplePay.Api.Services.QrService>();
-        builder.Services.AddSingleton<ApplePay.Api.Services.CertificateService>();
-        builder.Services.AddSingleton<ApplePay.Api.Services.XmlSigningService>();
 
         // Authorization
         builder.Services.AddAuthorization();
