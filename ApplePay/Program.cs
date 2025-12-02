@@ -1,4 +1,6 @@
+using ApplePay.Interface;
 using ApplePay.Models;
+using ApplePay.Options;
 using ApplePay.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
@@ -8,9 +10,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Polly;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +24,10 @@ builder.Services.Configure<ApplePay.Api.Options.ZatcaOptions>(
 // Bind options for Tabby
 builder.Services.Configure<TabbyOptions>(
     builder.Configuration.GetSection(TabbyOptions.SectionName));
+
+// Bind options for Paymob
+builder.Services.Configure<PaymobOptions>(
+    builder.Configuration.GetSection(PaymobOptions.SectionName));
 
 // Register controllers
 builder.Services.AddControllers();
@@ -56,8 +62,20 @@ builder.Services.AddHttpClient<TabbyService>((sp, client) =>
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", opts.SecretKey);
 });
 
+// Paymob typed HttpClient
+builder.Services.AddHttpClient<PaymobService>((sp, client) =>
+{
+    var opts = sp.GetRequiredService<IOptions<PaymobOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "https://accept.paymob.com" : opts.BaseUrl!.TrimEnd('/');
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.DefaultRequestHeaders.Accept.Clear();
+    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+});
+
 // ZATCA services
 builder.Services.AddSingleton<ApplePay.Api.Services.IZatcaService, ApplePay.Api.Services.ZatcaService>();
+builder.Services.AddSingleton<IPaymobService, InMemoryPaymobPaymentRepository>();
 builder.Services.AddSwaggerGen();
 builder.Services.Configure<CredimaxOptions>(
     builder.Configuration.GetSection(CredimaxOptions.SectionName));

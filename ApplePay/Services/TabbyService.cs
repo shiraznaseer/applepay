@@ -1,12 +1,15 @@
+using ApplePay.Models;
+using ApplePay.Models.Tabby;
+using Microsoft.Extensions.Options;
+using System.Data.SqlClient;
+using System.Globalization;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ApplePay.Models;
-using Microsoft.Extensions.Options;
-using System.Globalization;
-using System.Linq;
+using static Org.BouncyCastle.Math.EC.ECCurve;
 
 namespace ApplePay.Services
 {
@@ -159,10 +162,87 @@ namespace ApplePay.Services
         {
             using var resp = await _http.GetAsync($"/api/v2/payments/{paymentId}", ct);
             var json = await resp.Content.ReadAsStringAsync(ct);
+
             if (!resp.IsSuccessStatusCode)
                 throw new HttpRequestException($"Tabby API {(int)resp.StatusCode}: {json}");
-            return JsonDocument.Parse(json).RootElement.Clone();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Extract required fields
+            string paymentIdVal = root.GetProperty("id").GetString();
+            string orderReferenceId = root.GetProperty("order").GetProperty("reference_id").GetString();
+            string status = root.GetProperty("status").GetString();
+            decimal amount = decimal.Parse(root.GetProperty("amount").GetString());
+            string currency = root.GetProperty("currency").GetString();
+
+            string buyerName = root.GetProperty("buyer").GetProperty("name").GetString();
+            string buyerEmail = root.GetProperty("buyer").GetProperty("email").GetString();
+            string buyerPhone = root.GetProperty("buyer").GetProperty("phone").GetString();
+
+            // Save using SqlCommand
+            await SavePaymentToDatabaseAsync(
+                paymentIdVal,
+                orderReferenceId,
+                status,
+                amount,
+                currency,
+                buyerName,
+                buyerEmail,
+                buyerPhone,
+                json,
+                ct
+            );
+
+            return root.Clone();
         }
+
+        private async Task SavePaymentToDatabaseAsync(
+    string paymentId,
+    string orderReferenceId,
+    string status,
+    decimal amount,
+    string currency,
+    string buyerName,
+    string buyerEmail,
+    string buyerPhone,
+    string rawJson,
+    CancellationToken ct)
+        {
+            string connectionString =
+           "Server=UTILITIES\\SQLEXPRESS;Database=Tabby;User Id=softsol1_Tap;password=775RAxUz[<B&;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True;Integrated Security=false";
+
+
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                await conn.OpenAsync(ct);
+
+                string query = @"
+            INSERT INTO TabbyPayments
+            (PaymentId, OrderReferenceId, Status, Amount, Currency, BuyerName, BuyerEmail, BuyerPhone, RawJson)
+            VALUES
+            (@PaymentId, @OrderReferenceId, @Status, @Amount, @Currency, @BuyerName, @BuyerEmail, @BuyerPhone, @RawJson);
+        ";
+
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@PaymentId", paymentId);
+                    cmd.Parameters.AddWithValue("@OrderReferenceId", orderReferenceId);
+                    cmd.Parameters.AddWithValue("@Status", status ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Amount", amount);
+                    cmd.Parameters.AddWithValue("@Currency", currency ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@BuyerName", buyerName ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@BuyerEmail", buyerEmail ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@BuyerPhone", buyerPhone ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@RawJson", rawJson);
+
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
+            }
+        }
+
+
+
 
         public sealed class CaptureRequest
         {
@@ -229,5 +309,58 @@ namespace ApplePay.Services
             var cleanedSuffix = suffix.TrimStart('/');
             return baseUrl + cleanedSuffix;
         }
+        public async Task<TabbyPaymentRecord?> GetPaymentFromDatabaseAsync(
+    string paymentId,
+    string orderReferenceId,
+    CancellationToken ct)
+        {
+            string connectionString =
+                "Server=UTILITIES\\SQLEXPRESS;Database=Tabby;User Id=softsol1_Tap;password=775RAxUz[<B&;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True;Integrated Security=false";
+
+            using var conn = new SqlConnection(connectionString);
+            await conn.OpenAsync(ct);
+
+            string query = @"
+        SELECT TOP 1
+            Id,
+            PaymentId,
+            OrderReferenceId,
+            Status,
+            Amount,
+            Currency,
+            BuyerName,
+            BuyerEmail,
+            BuyerPhone,
+            RawJson,
+            CreatedAt
+        FROM TabbyPayments
+        WHERE PaymentId = @PaymentId AND OrderReferenceId = @OrderReferenceId;
+    ";
+
+            using var cmd = new SqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("@PaymentId", paymentId);
+            cmd.Parameters.AddWithValue("@OrderReferenceId", orderReferenceId);
+
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+
+            if (!reader.Read())
+                return null;
+
+            return new TabbyPaymentRecord
+            {
+                Id = reader.GetInt32(0),
+                PaymentId = reader.GetString(1),
+                OrderReferenceId = reader.GetString(2),
+                Status = reader.IsDBNull(3) ? null : reader.GetString(3),
+                Amount = reader.GetDecimal(4),
+                Currency = reader.GetString(5),
+                BuyerName = reader.IsDBNull(6) ? null : reader.GetString(6),
+                BuyerEmail = reader.IsDBNull(7) ? null : reader.GetString(7),
+                BuyerPhone = reader.IsDBNull(8) ? null : reader.GetString(8),
+                RawJson = reader.IsDBNull(9) ? null : reader.GetString(9),
+                CreatedAt = reader.GetDateTime(10)
+            };
+        }
+
     }
 }

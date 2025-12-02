@@ -1,10 +1,11 @@
 using ApplePay.Models;
+using ApplePay.Models.Tabby;
 using ApplePay.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
-using System.Net;
 using System.ComponentModel.DataAnnotations;
+using System.Net;
+using System.Text.Json;
 
 namespace ApplePay.Controllers
 {
@@ -93,6 +94,14 @@ namespace ApplePay.Controllers
         {
             var res = await _tabby.RetrievePaymentAsync(id, ct);
             return Ok(res);
+        }
+        [HttpPost("payments/register")]
+        public async Task<ActionResult<JsonElement>> RegisterPayment(
+    [FromBody] RegisterPaymentRequest request,
+    CancellationToken ct)
+        {
+            var result = await _tabby.GetPaymentFromDatabaseAsync(request.PaymentId, request.OrderReferenceId, ct);
+            return Ok(result);
         }
 
         public sealed class CaptureDto
