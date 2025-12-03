@@ -130,9 +130,51 @@ namespace ApplePay.Controllers
         }
 
         [HttpPost("webhook")]
-        public ActionResult<object> Webhook([FromBody] JsonElement payload)
+        public async Task<ActionResult<object>> Webhook([FromBody] JsonElement payload, [FromServices] IWebSocketNotificationService notificationService, CancellationToken ct)
         {
-            return Ok(new { received = true });
+            try
+            {
+                // Extract payment information from webhook payload
+                string paymentId = "unknown";
+                string orderReferenceId = "unknown";
+                string status = "unknown";
+                decimal amount = 0;
+
+                if (payload.TryGetProperty("payment", out var paymentElement))
+                {
+                    paymentId = paymentElement.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "unknown" : "unknown";
+                    status = payload.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "unknown" : "unknown";
+                    amount = payload.TryGetProperty("amount", out var amountProp) ? amountProp.GetDecimal() : 0;
+                }
+                else if (payload.TryGetProperty("id", out var directIdProp))
+                {
+                    paymentId = directIdProp.GetString() ?? "unknown";
+                    status = payload.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "unknown" : "unknown";
+                    amount = payload.TryGetProperty("amount", out var amountProp) ? amountProp.GetDecimal() : 0;
+                }
+
+                if (payload.TryGetProperty("order", out var orderElement))
+                {
+                    orderReferenceId = orderElement.TryGetProperty("reference_id", out var refIdProp) ? refIdProp.GetString() ?? "unknown" : "unknown";
+                }
+
+                var paymentEvent = new PaymentUpdateEvent
+                {
+                    PaymentId = paymentId,
+                    OrderReferenceId = orderReferenceId,
+                    Status = status,
+                    Amount = amount
+                };
+
+                await notificationService.NotifyPaymentUpdateAsync(paymentEvent);
+
+                return Ok(new { received = true });
+            }
+            catch (Exception ex)
+            {
+                // Log error but still return success to webhook sender
+                return Ok(new { received = true, error = ex.Message });
+            }
         }
     }
 }

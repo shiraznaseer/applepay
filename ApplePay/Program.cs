@@ -8,14 +8,16 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Polly;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
-
 
 // Bind options for ZATCA
 builder.Services.Configure<ApplePay.Api.Options.ZatcaOptions>(
@@ -28,6 +30,43 @@ builder.Services.Configure<TabbyOptions>(
 // Bind options for Paymob
 builder.Services.Configure<PaymobOptions>(
     builder.Configuration.GetSection(PaymobOptions.SectionName));
+
+// Bind options for WebSocket Auth
+builder.Services.Configure<WebSocketAuthOptions>(
+    builder.Configuration.GetSection(WebSocketAuthOptions.SectionName));
+
+// Bind options for WebSocket Rate Limit
+builder.Services.Configure<WebSocketRateLimitOptions>(
+    builder.Configuration.GetSection(WebSocketRateLimitOptions.SectionName));
+
+// Bind options for Auth Users
+builder.Services.Configure<AuthUsersConfig>(
+    builder.Configuration.GetSection("AuthUsers"));
+
+// Add JWT Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var jwtSettings = builder.Configuration.GetSection("WebSocketAuth");
+        var secretKey = jwtSettings["SecretKey"];
+        
+        if (!string.IsNullOrEmpty(secretKey))
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(secretKey)),
+                ValidateIssuer = !string.IsNullOrEmpty(jwtSettings["Issuer"]),
+                ValidateAudience = !string.IsNullOrEmpty(jwtSettings["Audience"]),
+                ValidIssuer = jwtSettings["Issuer"],
+                ValidAudience = jwtSettings["Audience"],
+                ClockSkew = TimeSpan.Zero
+            };
+        }
+    });
+
+// Add Authorization
+builder.Services.AddAuthorization();
 
 // Register controllers
 builder.Services.AddControllers();
@@ -76,6 +115,10 @@ builder.Services.AddHttpClient<PaymobService>((sp, client) =>
 // ZATCA services
 builder.Services.AddSingleton<ApplePay.Api.Services.IZatcaService, ApplePay.Api.Services.ZatcaService>();
 builder.Services.AddSingleton<IPaymobService, InMemoryPaymobPaymentRepository>();
+
+// WebSocket services
+builder.Services.AddSingleton<IWebSocketNotificationService, WebSocketNotificationService>();
+builder.Services.AddSingleton<WebSocketHandler>();
 builder.Services.AddSwaggerGen();
 builder.Services.Configure<CredimaxOptions>(
     builder.Configuration.GetSection(CredimaxOptions.SectionName));
@@ -89,10 +132,13 @@ builder.Services.AddControllers()
 // ✅ CORS (allow all origins, methods, headers)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader());
+    options.AddPolicy("AllowAll", builder =>
+    {
+        builder.AllowAnyOrigin()
+               .AllowAnyMethod()
+               .AllowAnyHeader();
+        // Remove AllowCredentials() when using AllowAnyOrigin()
+    });
 });
 
 var app = builder.Build();
@@ -128,6 +174,19 @@ app.UseHsts();
 app.UseHttpsRedirection();
 
 app.UseRouting();
+
+// ✅ WebSocket Rate Limiting Middleware
+app.UseMiddleware<WebSocketRateLimitMiddleware>();
+
+// ✅ WebSocket Authentication Middleware
+app.UseMiddleware<WebSocketAuthMiddleware>();
+
+// ✅ Enable WebSockets
+app.UseWebSockets();
+
+// ✅ Enable Authentication & Authorization
+app.UseAuthentication();
+app.UseAuthorization();
 
 // ✅ Enable CORS
 app.UseCors("AllowAll");

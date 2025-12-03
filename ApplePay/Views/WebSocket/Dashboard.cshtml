@@ -1,0 +1,338 @@
+@{
+    ViewData["Title"] = "WebSocket Dashboard";
+    Layout = "_Layout";
+}
+
+<style>
+    .stat-card {
+        background-color: white;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        padding: 1.5rem;
+        border: 1px solid #e5e7eb;
+    }
+    .stat-value {
+        font-size: 1.875rem;
+        font-weight: 700;
+        color: #2563eb;
+    }
+    .stat-label {
+        color: #6b7280;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .status-healthy { 
+        color: #16a34a; 
+    }
+    .status-warning { 
+        color: #ca8a04; 
+    }
+    .status-error { 
+        color: #dc2626; 
+    }
+</style>
+
+<div class="container mx-auto px-4 py-8">
+    <header class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-800">ApplePay WebSocket Dashboard</h1>
+        <p class="text-gray-600">Real-time monitoring of WebSocket connections and payment updates</p>
+    </header>
+
+    <!-- Status Overview -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="stat-card">
+            <div class="stat-value" id="totalConnections">0</div>
+            <div class="stat-label">Total Connections</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="activeConnections">0</div>
+            <div class="stat-label">Active Connections</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="uniqueUsers">0</div>
+            <div class="stat-label">Unique Users</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="messagesSent">0</div>
+            <div class="stat-label">Messages Sent</div>
+        </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">Control Panel</h2>
+        <div class="flex flex-wrap gap-4">
+            <button onclick="refreshStats()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                Refresh Stats
+            </button>
+            <button onclick="sendTestNotification()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+                Send Test Notification
+            </button>
+            <button onclick="toggleWebSocket()" id="wsToggle" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded">
+                Connect WebSocket
+            </button>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">Connection Activity</h2>
+            <canvas id="connectionChart"></canvas>
+        </div>
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">Message Volume</h2>
+            <canvas id="messageChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Connected Users -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">Connected Users</h2>
+        <div id="usersList" class="space-y-2">
+            <p class="text-gray-500">Loading...</p>
+        </div>
+    </div>
+
+    <!-- WebSocket Messages Log -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4">Live Messages</h2>
+        <div id="messagesLog" class="bg-gray-50 rounded p-4 h-64 overflow-y-auto font-mono text-sm">
+            <p class="text-gray-500">WebSocket messages will appear here...</p>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let ws = null;
+        let connectionChart = null;
+        let messageChart = null;
+        let connectionData = [];
+        let messageData = [];
+
+        // Initialize charts
+        function initCharts() {
+            const ctx1 = document.getElementById('connectionChart').getContext('2d');
+            connectionChart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Connections',
+                        data: [],
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            const ctx2 = document.getElementById('messageChart').getContext('2d');
+            messageChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Messages',
+                        data: [],
+                        backgroundColor: 'rgba(34, 197, 94, 0.8)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Fetch stats from API
+        async function refreshStats() {
+            try {
+                const response = await fetch('/api/websocket/stats');
+                const stats = await response.json();
+                
+                document.getElementById('totalConnections').textContent = stats.totalConnections;
+                document.getElementById('activeConnections').textContent = stats.activeConnections;
+                document.getElementById('uniqueUsers').textContent = stats.uniqueUsers;
+                document.getElementById('messagesSent').textContent = stats.messagesSent.toLocaleString();
+
+                // Update charts
+                updateCharts(stats);
+                
+                // Load connected users
+                loadConnectedUsers();
+            } catch (error) {
+                console.error('Failed to fetch stats:', error);
+            }
+        }
+
+        // Update charts with new data
+        function updateCharts(stats) {
+            const now = new Date().toLocaleTimeString();
+            
+            // Update connection chart
+            if (connectionChart.data.labels.length > 10) {
+                connectionChart.data.labels.shift();
+                connectionChart.data.datasets[0].data.shift();
+            }
+            connectionChart.data.labels.push(now);
+            connectionChart.data.datasets[0].data.push(stats.activeConnections);
+            connectionChart.update();
+
+            // Update message chart
+            if (messageChart.data.labels.length > 10) {
+                messageChart.data.labels.shift();
+                messageChart.data.datasets[0].data.shift();
+            }
+            messageChart.data.labels.push(now);
+            messageChart.data.datasets[0].data.push(stats.messagesSent);
+            messageChart.update();
+        }
+
+        // Load connected users
+        async function loadConnectedUsers() {
+            try {
+                const response = await fetch('/api/websocket/connections');
+                const users = await response.json();
+                
+                const usersList = document.getElementById('usersList');
+                if (users.length === 0) {
+                    usersList.innerHTML = '<p class="text-gray-500">No users connected</p>';
+                } else {
+                    usersList.innerHTML = users.map(user => `
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <span class="font-medium">${user}</span>
+                            <span class="text-green-600 text-sm">● Online</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Failed to load connected users:', error);
+            }
+        }
+
+        // Send test notification
+        async function sendTestNotification() {
+            try {
+                const response = await fetch('/api/websocket/test-notification', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        paymentId: 'test_pay_' + Date.now(),
+                        orderReferenceId: 'test_order_' + Date.now(),
+                        status: 'authorized',
+                        amount: Math.random() * 1000
+                    })
+                });
+                
+                if (response.ok) {
+                    logMessage('Test notification sent successfully', 'success');
+                } else {
+                    logMessage('Failed to send test notification', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to send test notification:', error);
+                logMessage('Error sending test notification', 'error');
+            }
+        }
+
+        // Toggle WebSocket connection
+        function toggleWebSocket() {
+            const btn = document.getElementById('wsToggle');
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+                btn.textContent = 'Connect WebSocket';
+                btn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                btn.classList.add('bg-purple-500', 'hover:bg-purple-600');
+                logMessage('WebSocket disconnected', 'info');
+            } else {
+                connectWebSocket();
+                btn.textContent = 'Disconnect WebSocket';
+                btn.classList.remove('bg-purple-500', 'hover:bg-purple-600');
+                btn.classList.add('bg-red-500', 'hover:bg-red-600');
+            }
+        }
+
+        // Connect to WebSocket
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function(event) {
+                logMessage('WebSocket connected', 'success');
+                ws.send(JSON.stringify({ type: 'ping' }));
+            };
+            
+            ws.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                logMessage(`Received: ${JSON.stringify(message)}`, 'message');
+                
+                if (message.type === 'pong') {
+                    logMessage('Ping response received', 'success');
+                }
+            };
+            
+            ws.onclose = function(event) {
+                logMessage('WebSocket closed', 'warning');
+                const btn = document.getElementById('wsToggle');
+                btn.textContent = 'Connect WebSocket';
+                btn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                btn.classList.add('bg-purple-500', 'hover:bg-purple-600');
+            };
+            
+            ws.onerror = function(error) {
+                logMessage('WebSocket error: ' + error, 'error');
+            };
+        }
+
+        // Log messages to the console
+        function logMessage(message, type = 'info') {
+            const log = document.getElementById('messagesLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const colorClass = type === 'error' ? 'text-red-600' : 
+                              type === 'success' ? 'text-green-600' : 
+                              type === 'warning' ? 'text-yellow-600' : 'text-gray-700';
+            
+            const messageElement = document.createElement('div');
+            messageElement.className = colorClass;
+            messageElement.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            log.appendChild(messageElement);
+            log.scrollTop = log.scrollHeight;
+            
+            // Keep only last 50 messages
+            while (log.children.length > 50) {
+                log.removeChild(log.firstChild);
+            }
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+            refreshStats();
+            
+            // Auto-refresh stats every 5 seconds
+            setInterval(refreshStats, 5000);
+        });
+    </script>
+}
