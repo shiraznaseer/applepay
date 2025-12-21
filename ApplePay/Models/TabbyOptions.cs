@@ -13,5 +13,6 @@ namespace ApplePay.Models
         public string SuccessSuffix { get; set; } = "tabby-successs";
         public string CancelSuffix { get; set; } = "tabby-cancel";
         public string FailureSuffix { get; set; } = "tabby-failure";
+        public string TabbywebhookURL { get; set; }
     }
 }

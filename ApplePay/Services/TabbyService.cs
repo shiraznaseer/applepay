@@ -50,6 +50,7 @@ namespace ApplePay.Services
             public decimal UnitPrice { get; set; }
             public string? ImageUrl { get; set; }
             public string? ProductUrl { get; set; }
+            public string Category { get; set; } = "Course";
         }
 
         public sealed class CreateSessionResult
@@ -71,7 +72,8 @@ namespace ApplePay.Services
                     quantity = i.Quantity,
                     unit_price = i.UnitPrice.ToString("0.00", CultureInfo.InvariantCulture),
                     image_url = i.ImageUrl,
-                    product_url = i.ProductUrl
+                    product_url = i.ProductUrl,
+                    category = i.Category
                 }).ToArray()
                 : new object[]
                 {
@@ -80,7 +82,8 @@ namespace ApplePay.Services
                         reference_id = string.IsNullOrWhiteSpace(input.OrderReferenceId) ? "ITEM-1" : input.OrderReferenceId,
                         title = string.IsNullOrWhiteSpace(input.Description) ? "Item" : input.Description,
                         quantity = 1,
-                        unit_price = input.Amount.ToString("0.00", CultureInfo.InvariantCulture)
+                        unit_price = input.Amount.ToString("0.00", CultureInfo.InvariantCulture),
+                        category = "Course"
                     }
                 };
 
@@ -98,17 +101,13 @@ namespace ApplePay.Services
                         phone = input.BuyerPhone,
                         dob = input.BuyerDob
                     },
-                    shipping_address = new
-                    {
-                        city = input.ShippingCity,
-                        address = input.ShippingAddress,
-                        zip = input.ShippingZip
-                    },
                     order = new
                     {
                         reference_id = input.OrderReferenceId,
                         items = items
-                    }
+                    },
+                    order_history = new object[0],
+                    buyer_history = new object[0]
                 },
                 lang = input.Lang,
                 merchant_code = _opts.MerchantCode,

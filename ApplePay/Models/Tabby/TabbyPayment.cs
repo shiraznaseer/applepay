@@ -61,6 +61,7 @@ namespace ApplePay.Models.Tabby
         public decimal UnitPrice { get; set; }
         public string? ImageUrl { get; set; }
         public string? ProductUrl { get; set; }
+        public string Category { get; set; } = "Course";
     }
 
     public sealed class CreateSessionResult

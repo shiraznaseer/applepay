@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading;
+using System.IO; // system change: file logging support
 
 namespace ApplePay.Services
 {
@@ -71,6 +72,22 @@ namespace ApplePay.Services
             Task.Run(ProcessMessageQueue);
         }
 
+        private void LogToFile(string message)
+        {
+            try
+            {
+                var logDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+                Directory.CreateDirectory(logDirectory);
+                var logPath = Path.Combine(logDirectory, "websocket-notifications.log");
+                var line = $"{DateTime.UtcNow:O} {message}{Environment.NewLine}";
+                File.AppendAllText(logPath, line);
+            }
+            catch
+            {
+                // system change: swallow file logging errors to avoid impacting WebSocket flow
+            }
+        }
+
         public async Task AddConnectionAsync(string connectionId, WebSocket webSocket, string? userId = null)
         {
             var connection = new WebSocketConnection
@@ -115,7 +132,15 @@ namespace ApplePay.Services
 
         public async Task NotifyPaymentUpdateAsync(PaymentUpdateEvent paymentEvent)
         {
-            _messageQueue.Enqueue(paymentEvent);
+            _logger.LogInformation("Queueing payment update notification: paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}, amount={Amount}",
+                paymentEvent.PaymentId,
+                paymentEvent.OrderReferenceId,
+                paymentEvent.Status,
+                paymentEvent.Amount); // system change: log queued payment event
+
+            LogToFile($"Queue payment update: paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}, amount={paymentEvent.Amount}"); // system change
+
+            _messageQueue.Enqueue(paymentEvent); // system change
             await ProcessMessageQueue();
         }
 
@@ -167,13 +192,27 @@ namespace ApplePay.Services
             var message = JsonSerializer.Serialize(paymentEvent);
             var buffer = System.Text.Encoding.UTF8.GetBytes(message);
 
+            _logger.LogInformation("Broadcasting payment update: paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}, amount={Amount} to {ConnectionCount} connections",
+                paymentEvent.PaymentId,
+                paymentEvent.OrderReferenceId,
+                paymentEvent.Status,
+                paymentEvent.Amount,
+                _connections.Count); // system change: log broadcast details
+
+            LogToFile($"Broadcast start: paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}, amount={paymentEvent.Amount}, connections={_connections.Count}"); // system change
+
             var tasks = _connections.Values.Select(async connection =>
             {
                 await SendToConnectionAsync(connection, paymentEvent);
             });
 
             await Task.WhenAll(tasks);
-            _logger.LogInformation($"Payment update notification broadcasted to {_connections.Count} connections");
+            _logger.LogInformation("Payment update notification broadcast completed for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}",
+                paymentEvent.PaymentId,
+                paymentEvent.OrderReferenceId,
+                paymentEvent.Status); // system change: log broadcast completion
+
+            LogToFile($"Broadcast complete: paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}"); // system change
         }
 
         private async Task SendToConnectionAsync(WebSocketConnection connection, PaymentUpdateEvent paymentEvent)
@@ -194,17 +233,39 @@ namespace ApplePay.Services
                     connection.LastActivity = DateTime.UtcNow;
                     connection.MessagesSent++;
                     _stats.MessagesSent++;
+
+                    _logger.LogInformation("WebSocket send success: connectionId={ConnectionId}, userId={UserId}, paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}",
+                        connection.ConnectionId,
+                        connection.UserId,
+                        paymentEvent.PaymentId,
+                        paymentEvent.OrderReferenceId,
+                        paymentEvent.Status); // system change: per-connection success log
+
+                    LogToFile($"Send success: connectionId={connection.ConnectionId}, userId={connection.UserId}, paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}"); // system change
                 }
                 else
                 {
-                    _logger.LogWarning($"Connection {connection.ConnectionId} is not open, state: {connection.WebSocket.State}");
+                    _logger.LogWarning("Connection {ConnectionId} is not open (state={State}) for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}",
+                        connection.ConnectionId,
+                        connection.WebSocket.State,
+                        paymentEvent.PaymentId,
+                        paymentEvent.OrderReferenceId,
+                        paymentEvent.Status); // system change: per-connection warning log
+
+                    LogToFile($"Send skipped (state={connection.WebSocket.State}): connectionId={connection.ConnectionId}, paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}"); // system change
                 }
             }
             catch (Exception ex)
             {
                 connection.MessagesFailed++;
                 _stats.MessagesFailed++;
-                _logger.LogError(ex, $"Failed to send WebSocket message to connection {connection.ConnectionId}");
+                _logger.LogError(ex, "Failed to send WebSocket message to connection {ConnectionId} for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}",
+                    connection.ConnectionId,
+                    paymentEvent.PaymentId,
+                    paymentEvent.OrderReferenceId,
+                    paymentEvent.Status); // system change: per-connection error log
+
+                LogToFile($"Send error: connectionId={connection.ConnectionId}, paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}, error={ex.Message}"); // system change
             }
         }
 

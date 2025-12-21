@@ -6,6 +6,8 @@ using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Text.Json;
+using System.IO;
+using System.Text; // system change: file logging support
 
 namespace ApplePay.Controllers
 {
@@ -15,11 +17,13 @@ namespace ApplePay.Controllers
     {
         private readonly TabbyService _tabby;
         private readonly TabbyOptions _opts;
+        private readonly ILogger<TabbyController> _logger; // system change: inject logger for webhook diagnostics
 
-        public TabbyController(TabbyService tabby, IOptions<TabbyOptions> opts)
+        public TabbyController(TabbyService tabby, IOptions<TabbyOptions> opts, ILogger<TabbyController> logger)
         {
             _tabby = tabby;
             _opts = opts.Value;
+            _logger = logger; // system change
         }
 
         public sealed class CreateSessionRequest
@@ -134,6 +138,18 @@ namespace ApplePay.Controllers
         {
             try
             {
+                var rawBody = payload.GetRawText();
+                
+                // Validate webhook signature
+                if (!ValidateWebhookSignature(Request))
+                {
+                    _logger.LogWarning("Invalid webhook signature received at {Timestamp}", DateTime.UtcNow);
+                    return Unauthorized(new { error = "Invalid signature" });
+                }
+                
+                _logger.LogInformation("Tabby webhook received at {Timestamp} with body: {Body}", DateTime.UtcNow, rawBody); // system change: log full webhook body
+                LogToFile($"Webhook received: body={rawBody}"); // system change: persist webhook body to file
+
                 // Extract payment information from webhook payload
                 string paymentId = "unknown";
                 string orderReferenceId = "unknown";
@@ -158,7 +174,64 @@ namespace ApplePay.Controllers
                     orderReferenceId = orderElement.TryGetProperty("reference_id", out var refIdProp) ? refIdProp.GetString() ?? "unknown" : "unknown";
                 }
 
-                var paymentEvent = new PaymentUpdateEvent
+                _logger.LogInformation("Tabby webhook parsed: paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}, amount={Amount}", paymentId, orderReferenceId, status, amount); // system change: log parsed fields
+                LogToFile($"Parsed webhook: paymentId={paymentId}, orderReferenceId={orderReferenceId}, status={status}, amount={amount}"); // system change
+
+                try
+                {
+                    var record = await _tabby.GetPaymentFromDatabaseAsync(paymentId, orderReferenceId, ct); // system change: DB lookup for payment
+                    if (record != null)
+                    {
+                        _logger.LogInformation("Tabby payment record found in database for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={DbStatus}, amount={DbAmount}",
+                            record.PaymentId, record.OrderReferenceId, record.Status, record.Amount);
+                        LogToFile($"DB record found: paymentId={record.PaymentId}, orderReferenceId={record.OrderReferenceId}, status={record.Status}, amount={record.Amount}"); // system change
+                    }
+                    else
+                    {
+                        _logger.LogWarning("No Tabby payment record found in database for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}", paymentId, orderReferenceId);
+                        LogToFile($"DB record NOT found: paymentId={paymentId}, orderReferenceId={orderReferenceId}"); // system change
+                    }
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError(dbEx, "Error while looking up Tabby payment in database for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}", paymentId, orderReferenceId);
+                }
+
+                if (string.Equals(status, "authorized", StringComparison.OrdinalIgnoreCase)) // system change: auto-capture when authorized
+                {
+                    try
+                    {
+                        // First verify payment status with Tabby API
+                        _logger.LogInformation("Verifying Tabby payment status before capture for paymentId={PaymentId}", paymentId);
+                        var paymentVerification = await _tabby.RetrievePaymentAsync(paymentId, ct);
+                        string verifiedStatus = paymentVerification.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "unknown" : "unknown";
+                        
+                        if (string.Equals(verifiedStatus, "AUTHORIZED", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogInformation("Payment verified as AUTHORIZED, proceeding with capture for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, amount={Amount}", paymentId, orderReferenceId, amount);
+                            var captureRequest = new TabbyService.CaptureRequest
+                            {
+                                Amount = amount,
+                                ReferenceId = orderReferenceId
+                            };
+
+                            var captureResult = await _tabby.CapturePaymentAsync(paymentId, captureRequest, ct); // system change: call capture API
+                            _logger.LogInformation("Tabby capture result for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}: {CaptureResult}", paymentId, orderReferenceId, captureResult.ToString());
+                            LogToFile($"Capture result: paymentId={paymentId}, orderReferenceId={orderReferenceId}, result={captureResult}"); // system change
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Payment verification failed. Expected AUTHORIZED but got {VerifiedStatus} for paymentId={PaymentId}", verifiedStatus, paymentId);
+                            LogToFile($"Verification failed: expected AUTHORIZED, got {verifiedStatus} for paymentId={paymentId}");
+                        }
+                    }
+                    catch (Exception captureEx)
+                    {
+                        _logger.LogError(captureEx, "Error while capturing Tabby payment paymentId={PaymentId}, orderReferenceId={OrderReferenceId}", paymentId, orderReferenceId);
+                    }
+                }
+
+                var paymentEvent = new PaymentUpdateEvent // system change: payment event built from webhook
                 {
                     PaymentId = paymentId,
                     OrderReferenceId = orderReferenceId,
@@ -166,14 +239,52 @@ namespace ApplePay.Controllers
                     Amount = amount
                 };
 
+                _logger.LogInformation("Enqueuing WebSocket payment update notification for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}, amount={Amount}",
+                    paymentEvent.PaymentId, paymentEvent.OrderReferenceId, paymentEvent.Status, paymentEvent.Amount); // system change: log WS enqueue
+                LogToFile($"WebSocket enqueue: paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}, amount={paymentEvent.Amount}"); // system change
+
                 await notificationService.NotifyPaymentUpdateAsync(paymentEvent);
 
                 return Ok(new { received = true });
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Unhandled error processing Tabby webhook");
                 // Log error but still return success to webhook sender
                 return Ok(new { received = true, error = ex.Message });
+            }
+        }
+        
+        private bool ValidateWebhookSignature(HttpRequest request)
+        {
+            // Get the signature from header (you need to configure this in Tabby webhook registration)
+            var signature = request.Headers["X-Tabby-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature))
+            {
+                _logger.LogWarning("No X-Tabby-Signature header found");
+                return false;
+            }
+            
+            // For now, implement basic validation
+            // You should implement proper HMAC signature validation here
+            // based on Tabby's signature validation documentation
+            var expectedSignature = _opts.SecretKey;
+            return signature == expectedSignature; // Replace with proper HMAC validation
+        }
+        
+                private void LogToFile(string message)
+        {
+            try
+            {
+                var logDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+                Directory.CreateDirectory(logDirectory);
+                var logPath = Path.Combine(logDirectory, "tabby-webhook.log");
+                var line = $"{DateTime.UtcNow:O} {message}{Environment.NewLine}";
+                System.IO.File.AppendAllText(logPath, line);
+            }
+            catch
+            {
+                // system change: swallow file logging errors to avoid impacting webhook
             }
         }
     }
