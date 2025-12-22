@@ -29,7 +29,7 @@ namespace ApplePay.Controllers
         public sealed class CreateSessionRequest
         {
             public decimal Amount { get; set; }
-            public string Currency { get; set; } = "SAR";
+            public string Currency { get; set; } = "AED";
             public string Description { get; set; } = string.Empty;
             public string BuyerName { get; set; } = string.Empty;
             public string BuyerEmail { get; set; } = string.Empty;
@@ -53,6 +53,7 @@ namespace ApplePay.Controllers
             public decimal UnitPrice { get; set; }
             public string? ImageUrl { get; set; }
             public string? ProductUrl { get; set; }
+            public string Category { get; set; } = "Course";
         }
 
         [HttpPost("session")]
@@ -82,7 +83,8 @@ namespace ApplePay.Controllers
                         Quantity = i.Quantity,
                         UnitPrice = i.UnitPrice,
                         ImageUrl = i.ImageUrl,
-                        ProductUrl = i.ProductUrl
+                        ProductUrl = i.ProductUrl,
+                        Category = i.Category
                     }).ToList()
                 }, ct);
                 return Ok(new { status = res.Status, paymentId = res.PaymentId, sessionId = res.SessionId, webUrl = res.WebUrl, raw = res.Raw });

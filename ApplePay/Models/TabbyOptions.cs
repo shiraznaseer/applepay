@@ -10,7 +10,7 @@ namespace ApplePay.Models
         public required string MerchantCode { get; set; }
 
         public required string ReturnUrlBase { get; set; }
-        public string SuccessSuffix { get; set; } = "tabby-successs";
+        public string SuccessSuffix { get; set; } = "tabby-success";
         public string CancelSuffix { get; set; } = "tabby-cancel";
         public string FailureSuffix { get; set; } = "tabby-failure";
         public string TabbywebhookURL { get; set; }

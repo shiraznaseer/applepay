@@ -106,8 +106,15 @@ namespace ApplePay.Services
                         reference_id = input.OrderReferenceId,
                         items = items
                     },
-                    order_history = new object[0],
-                    buyer_history = new object[0]
+                    buyer_history = new
+                    {
+                        registered_since = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                        loyalty_level = 0,
+                        wishlist_count = 0,
+                        is_social_networks_connected = false,
+                        is_phone_number_verified = false,
+                        is_email_verified = false
+                    }
                 },
                 lang = input.Lang,
                 merchant_code = _opts.MerchantCode,
@@ -119,9 +126,12 @@ namespace ApplePay.Services
                 }
             };
 
+            var jsonPayload = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+            Console.WriteLine($"Tabby Request Payload:\n{jsonPayload}"); // Debug logging
+            
             using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v2/checkout")
             {
-                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
             };
 
             using var resp = await _http.SendAsync(req, ct);
