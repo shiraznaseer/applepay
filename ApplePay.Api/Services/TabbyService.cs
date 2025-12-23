@@ -308,7 +308,7 @@ namespace ApplePay.Services
 
             string query = @"
                 UPDATE TabbyPayments 
-                SET Status = @Status, RawJson = @RawJson, UpdatedAt = GETUTCDATE()
+                SET Status = @Status, RawJson = @RawJson
                 WHERE PaymentId = @PaymentId;
             ";
 

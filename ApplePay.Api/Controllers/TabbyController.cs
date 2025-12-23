@@ -152,168 +152,167 @@ namespace ApplePay.Controllers
         }
 
         [HttpPost("webhook")]
-        public async Task<ActionResult<object>> Webhook(
-            [FromBody] JsonElement payload,
-            [FromServices] IWebSocketNotificationService notificationService,
-            CancellationToken ct)
+        public async Task<ActionResult<object>> Webhook([FromBody] JsonElement payload, [FromServices] IWebSocketNotificationService notificationService, CancellationToken ct)
         {
             try
             {
                 var rawBody = payload.GetRawText();
-
+                
                 // Validate webhook signature
                 if (!ValidateWebhookSignature(Request))
                 {
                     _logger.LogWarning("Invalid webhook signature received at {Timestamp}", DateTime.UtcNow);
                     return Unauthorized(new { error = "Invalid signature" });
                 }
+                
+                _logger.LogInformation("Tabby webhook received at {Timestamp} with body: {Body}", DateTime.UtcNow, rawBody); // system change: log full webhook body
+                LogToFile($"Webhook received: body={rawBody}"); // system change: persist webhook body to file
 
-                _logger.LogInformation("Tabby webhook received at {Timestamp} with body: {Body}", DateTime.UtcNow, rawBody);
-                LogToFile($"Webhook received: body={rawBody}");
-
-                // -------------------------------
-                // SAFE EXTRACTION
-                // -------------------------------
+                // Extract payment information from webhook payload
                 string paymentId = "unknown";
                 string orderReferenceId = "unknown";
                 string status = "unknown";
                 decimal amount = 0;
 
-                JsonElement source = payload;
-
-                // Case 1: payment object exists
-                if (payload.TryGetProperty("payment", out var paymentElement))
-                {
-                    source = paymentElement;
-                }
-
-                // Payment Id
-                if (source.TryGetProperty("id", out var idProp))
-                {
-                    paymentId = idProp.GetString() ?? "unknown";
-                }
-
-                // Status
-                if (payload.TryGetProperty("status", out var statusProp))
-                {
-                    status = statusProp.GetString() ?? "unknown";
-                }
-
-                // Amount (STRING or NUMBER safe handling)
-                if (payload.TryGetProperty("amount", out var amountProp))
-                {
-                    if (amountProp.ValueKind == JsonValueKind.String &&
-                        decimal.TryParse(amountProp.GetString(), out var parsedAmount))
-                    {
-                        amount = parsedAmount;
-                    }
-                    else if (amountProp.ValueKind == JsonValueKind.Number)
-                    {
-                        amount = amountProp.GetDecimal();
-                    }
-                }
-
-                // Order Reference
-                if (payload.TryGetProperty("order", out var orderElement) &&
-                    orderElement.TryGetProperty("reference_id", out var refIdProp))
-                {
-                    orderReferenceId = refIdProp.GetString() ?? "unknown";
-                }
-
-                _logger.LogInformation(
-                    "Tabby webhook parsed: paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}, amount={Amount}",
-                    paymentId, orderReferenceId, status, amount);
-
-                LogToFile($"Parsed webhook: paymentId={paymentId}, orderReferenceId={orderReferenceId}, status={status}, amount={amount}");
-
-                // -------------------------------
-                // DATABASE LOOKUP
-                // -------------------------------
                 try
                 {
-                    var record = await _tabby.GetPaymentFromDatabaseAsync(paymentId, orderReferenceId, ct);
-                    if (record != null)
+                    LogToFile("Starting payload parsing...");
+                    
+                    if (payload.TryGetProperty("payment", out var paymentElement))
                     {
-                        _logger.LogInformation(
-                            "DB record found: paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={DbStatus}, amount={DbAmount}",
-                            record.PaymentId, record.OrderReferenceId, record.Status, record.Amount);
+                        LogToFile("Found payment object in payload");
+                        paymentId = paymentElement.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "unknown" : "unknown";
+                        status = paymentElement.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "unknown" : "unknown";
+                        try
+                        {
+                            if (payload.TryGetProperty("amount", out var amountProp))
+                            {
+                                var amountString = amountProp.GetString();
+                                LogToFile($"Parsing amount string: {amountString}");
+                                amount = decimal.Parse(amountString, CultureInfo.InvariantCulture);
+                            }
+                        }
+                        catch (Exception amountEx)
+                        {
+                            LogToFile($"Error parsing amount: {amountEx.Message}");
+                            amount = 0;
+                        }
+                        LogToFile($"Parsed from payment object: paymentId={paymentId}, status={status}, amount={amount}");
+                    }
+                    else if (payload.TryGetProperty("id", out var directIdProp))
+                    {
+                        LogToFile("No payment object, using direct id property");
+                        paymentId = directIdProp.GetString() ?? "unknown";
+                        status = payload.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "unknown" : "unknown";
+                        try
+                        {
+                            if (payload.TryGetProperty("amount", out var amountProp))
+                            {
+                                var amountString = amountProp.GetString();
+                                LogToFile($"Parsing amount string: {amountString}");
+                                amount = decimal.Parse(amountString, CultureInfo.InvariantCulture);
+                            }
+                        }
+                        catch (Exception amountEx)
+                        {
+                            LogToFile($"Error parsing amount: {amountEx.Message}");
+                            amount = 0;
+                        }
+                        LogToFile($"Parsed from direct properties: paymentId={paymentId}, status={status}, amount={amount}");
                     }
                     else
                     {
-                        _logger.LogWarning(
-                            "DB record NOT found for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}",
-                            paymentId, orderReferenceId);
+                        LogToFile("No payment object or direct id found in payload");
+                    }
+
+                    if (payload.TryGetProperty("order", out var orderElement))
+                    {
+                        orderReferenceId = orderElement.TryGetProperty("reference_id", out var refIdProp) ? refIdProp.GetString() ?? "unknown" : "unknown";
+                        LogToFile($"Parsed order reference: {orderReferenceId}");
+                    }
+                    else
+                    {
+                        LogToFile("No order object found in payload");
+                    }
+                }
+                catch (Exception parseEx)
+                {
+                    LogToFile($"Error parsing payload: {parseEx.Message}");
+                    _logger.LogError(parseEx, "Error parsing webhook payload");
+                }
+
+                _logger.LogInformation("Tabby webhook parsed: paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}, amount={Amount}", paymentId, orderReferenceId, status, amount); // system change: log parsed fields
+                LogToFile($"Parsed webhook: paymentId={paymentId}, orderReferenceId={orderReferenceId}, status={status}, amount={amount}"); // system change
+
+                try
+                {
+                    var record = await _tabby.GetPaymentFromDatabaseAsync(paymentId, orderReferenceId, ct); // system change: DB lookup for payment
+                    if (record != null)
+                    {
+                        _logger.LogInformation("Tabby payment record found in database for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={DbStatus}, amount={DbAmount}",
+                            record.PaymentId, record.OrderReferenceId, record.Status, record.Amount);
+                        LogToFile($"DB record found: paymentId={record.PaymentId}, orderReferenceId={record.OrderReferenceId}, status={record.Status}, amount={record.Amount}"); // system change
+                    }
+                    else
+                    {
+                        _logger.LogWarning("No Tabby payment record found in database for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}", paymentId, orderReferenceId);
+                        LogToFile($"DB record NOT found: paymentId={paymentId}, orderReferenceId={orderReferenceId}"); // system change
                     }
                 }
                 catch (Exception dbEx)
                 {
-                    _logger.LogError(dbEx,
-                        "Error while looking up Tabby payment in database for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}",
-                        paymentId, orderReferenceId);
+                    _logger.LogError(dbEx, "Error while looking up Tabby payment in database for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}", paymentId, orderReferenceId);
                 }
 
-                // -------------------------------
-                // AUTO CAPTURE (AUTHORIZED)
-                // -------------------------------
-                LogToFile($"AUTHORIZED check before: {status}");
-
-                if (string.Equals(status, "authorized", StringComparison.OrdinalIgnoreCase))
+                LogToFile($"AUTHORIZED 1 before{status}"); 
+                if (status.ToLower() == "authorized") // system change: auto-capture when authorized
                 {
-                    LogToFile($"AUTHORIZED confirmed: {status}");
-
+                    LogToFile($"AUTHORIZED 1 after{status}");
                     try
                     {
-                        _logger.LogInformation("Verifying Tabby payment status for paymentId={PaymentId}", paymentId);
-
+                        // First verify payment status with Tabby API
+                        _logger.LogInformation("Verifying Tabby payment status before capture for paymentId={PaymentId}", paymentId);
                         var paymentVerification = await _tabby.VerifyPaymentAsync(paymentId, ct);
-                        string verifiedStatus =
-                            paymentVerification.TryGetProperty("status", out var vs)
-                                ? vs.GetString() ?? "unknown"
-                                : "unknown";
-
-                        LogToFile($"Verification status: {verifiedStatus}");
-
-                        if (string.Equals(verifiedStatus, "authorized", StringComparison.OrdinalIgnoreCase))
+                        string verifiedStatus = paymentVerification.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "unknown" : "unknown";
+                        
+                        LogToFile($"AUTHORIZED 2 before{verifiedStatus}");
+                        if (verifiedStatus.ToLower() == "authorized")
                         {
+                            LogToFile($"AUTHORIZED 2 after{verifiedStatus}");
+                            _logger.LogInformation("Payment verified as authorized, proceeding with capture for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, amount={Amount}", paymentId, orderReferenceId, amount);
                             var captureRequest = new TabbyService.CaptureRequest
                             {
                                 Amount = amount,
                                 ReferenceId = orderReferenceId
                             };
 
-                            var captureResult = await _tabby.CapturePaymentAsync(paymentId, captureRequest, ct);
-
-                            _logger.LogInformation(
-                                "Capture successful for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}",
-                                paymentId, orderReferenceId);
-
-                            LogToFile($"Capture success: paymentId={paymentId}, result={captureResult}");
+                            var captureResult = await _tabby.CapturePaymentAsync(paymentId, captureRequest, ct); // system change: call capture API
+                            _logger.LogInformation("Tabby capture result for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}: {CaptureResult}", paymentId, orderReferenceId, captureResult.ToString());
+                            LogToFile($"Capture result: paymentId={paymentId}, orderReferenceId={orderReferenceId}, result={captureResult}"); // system change
                         }
                         else
                         {
-                            _logger.LogWarning(
-                                "Verification failed. Expected AUTHORIZED, got {VerifiedStatus} for paymentId={PaymentId}",
-                                verifiedStatus, paymentId);
+                            _logger.LogWarning("Payment verification failed. Expected authorized but got {VerifiedStatus} for paymentId={PaymentId}", verifiedStatus, paymentId);
+                            LogToFile($"Verification failed: expected authorized, got {verifiedStatus} for paymentId={paymentId}");
                         }
                     }
                     catch (Exception captureEx)
                     {
-                        _logger.LogError(captureEx,
-                            "Error during capture for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}",
-                            paymentId, orderReferenceId);
+                        _logger.LogError(captureEx, "Error while capturing Tabby payment paymentId={PaymentId}, orderReferenceId={OrderReferenceId}", paymentId, orderReferenceId);
                     }
                 }
 
-                // -------------------------------
-                // WEBSOCKET NOTIFICATION
-                // -------------------------------
-                var paymentEvent = new PaymentUpdateEvent
+                var paymentEvent = new PaymentUpdateEvent // system change: payment event built from webhook
                 {
                     PaymentId = paymentId,
                     OrderReferenceId = orderReferenceId,
                     Status = status,
                     Amount = amount
                 };
+
+                _logger.LogInformation("Enqueuing WebSocket payment update notification for paymentId={PaymentId}, orderReferenceId={OrderReferenceId}, status={Status}, amount={Amount}",
+                    paymentEvent.PaymentId, paymentEvent.OrderReferenceId, paymentEvent.Status, paymentEvent.Amount); // system change: log WS enqueue
+                LogToFile($"WebSocket enqueue: paymentId={paymentEvent.PaymentId}, orderReferenceId={paymentEvent.OrderReferenceId}, status={paymentEvent.Status}, amount={paymentEvent.Amount}"); // system change
 
                 await notificationService.NotifyPaymentUpdateAsync(paymentEvent);
 
@@ -322,11 +321,11 @@ namespace ApplePay.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unhandled error processing Tabby webhook");
+                // Log error but still return success to webhook sender
                 return Ok(new { received = true, error = ex.Message });
             }
         }
-
-
+        
         private bool ValidateWebhookSignature(HttpRequest request)
         {
             // Get the signature from header (you need to configure this in Tabby webhook registration)
