@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ApplePay - API Payloads (Tabby + Tamara)</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --card: #121826;
+      --text: #e6eaf2;
+      --muted: #a7b0c0;
+      --border: #263045;
+      --accent: #7aa2f7;
+      --accent2: #9ece6a;
+      --warn: #ff9e64;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #111;
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+    }
+
+    .page {
+      max-width: 980px;
+      margin: 24px auto;
+      padding: 0 18px 36px;
+    }
+
+    h1 { font-size: 26px; margin: 0 0 8px; }
+    h2 { font-size: 20px; margin: 26px 0 10px; padding-top: 10px; border-top: 1px solid #ddd; }
+    h3 { font-size: 16px; margin: 18px 0 10px; }
+
+    .meta {
+      color: #444;
+      margin-bottom: 18px;
+    }
+
+    .note {
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-left: 4px solid #555;
+      border-radius: 8px;
+      background: #fafafa;
+      margin: 12px 0;
+    }
+
+    .note strong { display: inline-block; margin-right: 6px; }
+
+    .endpoint {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 14px;
+      margin: 12px 0;
+      page-break-inside: avoid;
+    }
+
+    .route {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: #f4f6fb;
+      border: 1px solid #e6e9f2;
+      display: inline-block;
+      margin-bottom: 10px;
+    }
+
+    .pill {
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-right: 8px;
+      border: 1px solid #ddd;
+      font-size: 12px;
+    }
+
+    .pill.post { background: #e8f5e9; border-color: #cfe8d2; }
+    .pill.get { background: #e3f2fd; border-color: #cfe3f4; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    @media print {
+      .page { margin: 0; max-width: none; }
+      a { color: inherit; text-decoration: none; }
+    }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    pre {
+      margin: 0;
+      padding: 10px 12px;
+      background: #0f172a;
+      color: #e5e7eb;
+      border-radius: 10px;
+      overflow-x: auto;
+      border: 1px solid #1f2937;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre;
+    }
+
+    .kv {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12.5px;
+      color: #111;
+    }
+
+    .muted { color: #555; }
+    ul { margin: 8px 0 0 18px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>ApplePay - API Payloads (Tabby + Tamara)</h1>
+    <div class="meta">
+      This document describes the <strong>project endpoints</strong> and their <strong>sample payloads</strong>.
+      <div class="muted">Generated for the repository: <span class="kv">Tammarn/applepay</span></div>
+    </div>
+
+    <div class="note">
+      <strong>PDF Export:</strong>
+      Open this file in a browser, then use <span class="kv">Ctrl+P</span> → <span class="kv">Save as PDF</span>.
+    </div>
+
+    <h2>Base URLs</h2>
+    <div class="endpoint">
+      <div><strong>Local:</strong> <span class="kv">http://localhost:&lt;port&gt;</span></div>
+      <div><strong>Production example:</strong> <span class="kv">https://applepay.tamarran.com</span></div>
+    </div>
+
+    <h2>Authentication / Headers</h2>
+    <div class="endpoint">
+      <div><strong>Tabby webhook validation:</strong> expects header <span class="kv">X-Tabby-Signature</span> (basic comparison to configured secret in this project).</div>
+      <div style="margin-top:8px;"><strong>Tamara webhook validation:</strong> expects JWT token in either:</div>
+      <ul>
+        <li><span class="kv">?tamaraToken=&lt;jwt&gt;</span> query string, or</li>
+        <li><span class="kv">Authorization: Bearer &lt;jwt&gt;</span></li>
+      </ul>
+    </div>
+
+    <h2>Tabby APIs</h2>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tabby/session</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request body</h3>
+          <pre>{
+  "amount": 100.00,
+  "currency": "AED",
+  "description": "Course purchase",
+  "buyerName": "John Doe",
+  "buyerEmail": "john@example.com",
+  "buyerPhone": "+971500000000",
+  "buyerDob": "1990-01-01",
+  "orderReferenceId": "ORDER-123",
+  "lang": "en",
+  "returnUrlBase": "https://your-store.com",
+  "shippingCity": "Dubai",
+  "shippingAddress": "N/A",
+  "shippingZip": "00000",
+  "items": [
+    {
+      "referenceId": "ITEM-1",
+      "title": "Online course",
+      "quantity": 1,
+      "unitPrice": 100.00,
+      "imageUrl": null,
+      "productUrl": null,
+      "category": "Course"
+    }
+  ]
+}</pre>
+        </div>
+        <div>
+          <h3>Response (example)</h3>
+          <pre>{
+  "status": "created",
+  "paymentId": "pay_...",
+  "sessionId": "sess_...",
+  "webUrl": "https://checkout.tabby.ai/...",
+  "raw": { }
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill get">GET</span> <span class="kv">/api/tabby/payments/{id}</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request</h3>
+          <pre>// No body
+// Path: {id} = Tabby payment id</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  // Raw JSON from Tabby Retrieve Payment API
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tabby/payments/register</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request body</h3>
+          <pre>{
+  "paymentId": "pay_...",
+  "orderReferenceId": "ORDER-123"
+}</pre>
+        </div>
+        <div>
+          <h3>Response (example)</h3>
+          <pre>{
+  "id": 1,
+  "paymentId": "pay_...",
+  "orderReferenceId": "ORDER-123",
+  "status": "AUTHORIZED",
+  "amount": 100.00,
+  "currency": "AED",
+  "buyerName": "...",
+  "buyerEmail": "...",
+  "buyerPhone": "...",
+  "rawJson": "{...}",
+  "createdAt": "2026-02-11T00:00:00Z"
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tabby/payments/{id}/capture</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request body</h3>
+          <pre>{
+  "amount": 100.00,
+  "referenceId": "ORDER-123"
+}</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  // Raw JSON from Tabby Capture API
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tabby/payments/{id}/refund</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request body</h3>
+          <pre>{
+  "amount": 10.00,
+  "reason": "customer_request",
+  "referenceId": "ORDER-123"
+}</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  // Raw JSON from Tabby Refund API
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tabby/webhook</span></div>
+      <div class="note">
+        <strong>Important:</strong> This endpoint expects header <span class="kv">X-Tabby-Signature</span>.
+      </div>
+      <div class="grid">
+        <div>
+          <h3>Request headers</h3>
+          <pre>X-Tabby-Signature: &lt;signature&gt;
+Content-Type: application/json</pre>
+          <h3 style="margin-top:12px;">Request body (example)</h3>
+          <pre>{
+  "status": "authorized",
+  "amount": "100.00",
+  "payment": {
+    "id": "pay_..."
+  },
+  "order": {
+    "reference_id": "ORDER-123"
+  }
+}</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  "received": true
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tabby/test-webhook</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request</h3>
+          <pre>// No body
+// This triggers an internal test payload and runs the same webhook handler.</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  "received": true
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <h2>Tamara APIs</h2>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tamara/checkout</span></div>
+      <div class="note">
+        <strong>Note:</strong> This endpoint forwards the JSON body to Tamara <span class="kv">POST /checkout</span>.
+        If config <span class="kv">Tamara:NotificationUrl</span> is set, the server auto-injects <span class="kv">merchant_url.notification</span> when missing.
+      </div>
+      <div class="grid">
+        <div>
+          <h3>Request body (example - adjust per Tamara docs)</h3>
+          <pre>{
+  "order_reference_id": "ORDER-123",
+  "total_amount": { "amount": 100.00, "currency": "SAR" },
+  "items": [
+    {
+      "reference_id": "ITEM-1",
+      "name": "Online course",
+      "type": "digital",
+      "sku": "COURSE-001",
+      "quantity": 1,
+      "unit_price": { "amount": 100.00, "currency": "SAR" },
+      "total_amount": { "amount": 100.00, "currency": "SAR" }
+    }
+  ],
+  "consumer": {
+    "first_name": "John",
+    "last_name": "Doe",
+    "phone_number": "+966500000000",
+    "email": "john@example.com"
+  },
+  "country_code": "SA",
+  "payment_type": "PAY_BY_INSTALMENTS",
+  "merchant_url": {
+    "success": "https://your-store.com/tamara-success",
+    "failure": "https://your-store.com/tamara-failure",
+    "cancel": "https://your-store.com/tamara-cancel"
+  }
+}</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  // Raw JSON from Tamara Create Checkout Session
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill get">GET</span> <span class="kv">/api/tamara/orders/{orderId}</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request</h3>
+          <pre>// No body
+// Path: {orderId} = Tamara order_id</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  // Raw JSON from Tamara Get Order
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tamara/orders/{orderId}/refund</span></div>
+      <div class="grid">
+        <div>
+          <h3>Request body</h3>
+          <pre>{
+  "amount": 10.50,
+  "currency": "SAR",
+  "comment": "test refund"
+}</pre>
+        </div>
+        <div>
+          <h3>Response</h3>
+          <pre>{
+  // Raw JSON from Tamara Simplified Refund
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill post">POST</span> <span class="kv">/api/tamara/webhook</span></div>
+      <div class="note">
+        <strong>Important:</strong> This endpoint requires a valid Tamara notification JWT.
+        It also:
+        <ul>
+          <li>Logs to <span class="kv">Logs/tamara-webhook.log</span></li>
+          <li>Saves history to SQL if <span class="kv">Tamara:DbConnectionString</span> is configured</li>
+          <li>Broadcasts WebSocket event <span class="kv">tamara.order.updated</span></li>
+          <li>On <span class="kv">order_approved</span>, it performs <span class="kv">authorise</span> then <span class="kv">capture</span> server-to-server.</li>
+        </ul>
+      </div>
+      <div class="grid">
+        <div>
+          <h3>Request headers (option 1)</h3>
+          <pre>Authorization: Bearer &lt;tamara_notification_jwt&gt;
+Content-Type: application/json</pre>
+          <h3 style="margin-top:12px;">Request (option 2)</h3>
+          <pre>POST /api/tamara/webhook?tamaraToken=&lt;tamara_notification_jwt&gt;</pre>
+        </div>
+        <div>
+          <h3>Request body (example)</h3>
+          <pre>{
+  "event_type": "order_approved",
+  "order_id": "TAMARA-ORDER-ID",
+  "status": "approved"
+}</pre>
+          <h3 style="margin-top:12px;">Response</h3>
+          <pre>{
+  "received": true
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <div class="route"><span class="pill get">GET</span> <span class="kv">/api/tamara/orders/{orderId}/history?top=50</span></div>
+      <div class="note">
+        <strong>Requires:</strong> <span class="kv">Tamara:DbConnectionString</span> to be set. If empty, this endpoint returns 400.
+      </div>
+      <div class="grid">
+        <div>
+          <h3>Request</h3>
+          <pre>// No body
+// Query param: top (1..200)</pre>
+        </div>
+        <div>
+          <h3>Response (example)</h3>
+          <pre>{
+  "order": {
+    "id": 1,
+    "orderId": "TAMARA-ORDER-ID",
+    "orderReferenceId": "ORDER-123",
+    "status": "authorised",
+    "amount": 100.00,
+    "currency": "SAR",
+    "rawJson": "{...}",
+    "createdAt": "2026-02-11T00:00:00Z",
+    "updatedAt": "2026-02-11T00:02:00Z"
+  },
+  "events": [
+    {
+      "id": 10,
+      "orderId": "TAMARA-ORDER-ID",
+      "eventType": "order_approved",
+      "status": "approved",
+      "rawJson": "{...}",
+      "createdAt": "2026-02-11T00:01:00Z"
+    }
+  ]
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <h2>Configuration keys (summary)</h2>
+    <div class="endpoint">
+      <h3>Tabby</h3>
+      <pre>{
+  "Tabby": {
+    "BaseUrl": "https://api.tabby.ai",
+    "SecretKey": "...",
+    "PublicKey": "...",
+    "MerchantCode": "...",
+    "ReturnUrlBase": "https://...",
+    "SuccessSuffix": "tabby-success",
+    "CancelSuffix": "tabby-cancel",
+    "FailureSuffix": "tabby-failure",
+    "TabbywebhookURL": "https://.../api/tabby/webhook"
+  }
+}</pre>
+      <h3 style="margin-top:12px;">Tamara</h3>
+      <pre>{
+  "Tamara": {
+    "BaseUrl": "https://api-sandbox.tamara.co",
+    "ApiToken": "...",
+    "NotificationToken": "...",
+    "NotificationIssuer": "Tamara",
+    "NotificationUrl": "https://.../api/tamara/webhook",
+    "DbConnectionString": "Server=...;Database=...;User Id=...;Password=...;..."
+  }
+}</pre>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -16,4 +16,10 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.1.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Migrations\**\*.cs" />
+    <Compile Remove="Models\Tamara\TamaraDbContext.cs" />
+    <Compile Remove="Models\Tamara\TamaraDbContextFactory.cs" />
+  </ItemGroup>
+
 </Project>

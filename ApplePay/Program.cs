@@ -27,6 +27,10 @@ builder.Services.Configure<ApplePay.Api.Options.ZatcaOptions>(
 builder.Services.Configure<TabbyOptions>(
     builder.Configuration.GetSection(TabbyOptions.SectionName));
 
+// Bind options for Tamara
+builder.Services.Configure<TamaraOptions>(
+    builder.Configuration.GetSection(TamaraOptions.SectionName));
+
 // Bind options for Paymob
 builder.Services.Configure<PaymobOptions>(
     builder.Configuration.GetSection(PaymobOptions.SectionName));
@@ -101,6 +105,20 @@ builder.Services.AddHttpClient<TabbyService>((sp, client) =>
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", opts.SecretKey);
 });
 
+// Tamara typed HttpClient
+builder.Services.AddHttpClient<TamaraService>((sp, client) =>
+{
+    var opts = sp.GetRequiredService<IOptions<TamaraOptions>>().Value;
+    var baseUrl = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "https://api-sandbox.tamara.co" : opts.BaseUrl!.TrimEnd('/');
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.DefaultRequestHeaders.Accept.Clear();
+    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+    var apiToken = opts.ApiToken?.Trim();
+    if (!string.IsNullOrWhiteSpace(apiToken))
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiToken);
+});
+
 // Paymob typed HttpClient
 builder.Services.AddHttpClient<PaymobService>((sp, client) =>
 {
@@ -119,7 +137,10 @@ builder.Services.AddSingleton<IPaymobService, InMemoryPaymobPaymentRepository>()
 // WebSocket services
 builder.Services.AddSingleton<IWebSocketNotificationService, WebSocketNotificationService>();
 builder.Services.AddSingleton<WebSocketHandler>();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.CustomSchemaIds(t => t.FullName);
+});
 builder.Services.Configure<CredimaxOptions>(
     builder.Configuration.GetSection(CredimaxOptions.SectionName));
 // ✅ Controllers + JSON enum converter
@@ -142,6 +163,20 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var tamara = scope.ServiceProvider.GetService<TamaraService>();
+        if (tamara != null && tamara.IsDbEnabled())
+            tamara.EnsureDbInitializedAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Failed to initialize Tamara DB tables");
+    }
+}
 
 // ✅ Swagger + Swagger UI always enabled
 app.UseSwagger();
