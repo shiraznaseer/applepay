@@ -251,7 +251,7 @@ namespace ApplePay.Controllers
                 // Store webhook event
                 try
                 {
-                    await _unipal.InsertWebhookEventAsync(paymentId, eventType, status, rawBody, ct);
+                    await _unipal.SaveWebhookEventToDatabaseAsync(paymentId, eventType, status, rawBody, ct);
                 }
                 catch (Exception ex)
                 {
@@ -262,7 +262,27 @@ namespace ApplePay.Controllers
                 try
                 {
                     var payment = await _unipal.GetPaymentAsync(paymentId, ct);
-                    await _unipal.UpsertPaymentAsync(paymentId, orderReferenceId, status, amount, currency, payment.GetRawText(), ct);
+                    
+                    // Extract buyer info from payment
+                    string buyerName = "", buyerEmail = "", buyerPhone = "";
+                    if (payment.TryGetProperty("customer", out var customerProp))
+                    {
+                        buyerName = customerProp.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                        buyerEmail = customerProp.TryGetProperty("email", out var emailProp) ? emailProp.GetString() ?? "" : "";
+                        buyerPhone = customerProp.TryGetProperty("phone", out var phoneProp) ? phoneProp.GetString() ?? "" : "";
+                    }
+                    
+                    await _unipal.SavePaymentToDatabaseAsync(
+                        paymentId, 
+                        orderReferenceId, 
+                        status, 
+                        amount, 
+                        currency, 
+                        buyerName, 
+                        buyerEmail, 
+                        buyerPhone, 
+                        payment.GetRawText(), 
+                        ct);
                 }
                 catch (Exception ex)
                 {

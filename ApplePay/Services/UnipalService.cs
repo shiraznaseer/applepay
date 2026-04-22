@@ -102,101 +102,108 @@ namespace ApplePay.Services
             return value.Substring(0, max) + "...(truncated)";
         }
 
-        // Database operations (if needed)
+        // Database operations using direct SQL
         public bool IsDbEnabled() => !string.IsNullOrWhiteSpace(_opts.DbConnectionString);
 
-        public async Task InsertWebhookEventAsync(string paymentId, string eventType, string status, string rawBody, CancellationToken ct)
+        public async Task SavePaymentToDatabaseAsync(
+            string paymentId,
+            string orderReferenceId,
+            string status,
+            decimal amount,
+            string currency,
+            string buyerName,
+            string buyerEmail,
+            string buyerPhone,
+            string rawJson,
+            CancellationToken ct)
         {
-            if (!IsDbEnabled()) return;
+            string connectionString = !string.IsNullOrWhiteSpace(_opts.DbConnectionString) 
+                ? _opts.DbConnectionString 
+                : "Server=UTILITIES\\SQLEXPRESS;Database=Unipal;User Id=softsol1_Tap;password=775RAxUz[<B&;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True;Integrated Security=false";
 
-            const string sql = @"
-                INSERT INTO UnipalWebhookEvents (PaymentId, EventType, Status, RawBody, CreatedAt)
-                VALUES (@paymentId, @eventType, @status, @rawBody, @createdAt)";
-
-            try
+            using (SqlConnection conn = new SqlConnection(connectionString))
             {
-                await using var conn = new SqlConnection(_opts.DbConnectionString);
                 await conn.OpenAsync(ct);
-                
-                await using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@paymentId", paymentId);
-                cmd.Parameters.AddWithValue("@eventType", eventType);
-                cmd.Parameters.AddWithValue("@status", status);
-                cmd.Parameters.AddWithValue("@rawBody", rawBody);
-                cmd.Parameters.AddWithValue("@createdAt", DateTime.UtcNow);
-                
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to insert Unipal webhook event for paymentId={PaymentId}", paymentId);
-                throw;
+
+                string query = @"
+            INSERT INTO UnipalPayments
+            (PaymentId, OrderReferenceId, Status, Amount, Currency, BuyerName, BuyerEmail, BuyerPhone, RawJson)
+            VALUES
+            (@PaymentId, @OrderReferenceId, @Status, @Amount, @Currency, @BuyerName, @BuyerEmail, @BuyerPhone, @RawJson);
+        ";
+
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@PaymentId", paymentId);
+                    cmd.Parameters.AddWithValue("@OrderReferenceId", orderReferenceId);
+                    cmd.Parameters.AddWithValue("@Status", status ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Amount", amount);
+                    cmd.Parameters.AddWithValue("@Currency", currency ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@BuyerName", buyerName ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@BuyerEmail", buyerEmail ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@BuyerPhone", buyerPhone ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@RawJson", rawJson);
+
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
             }
         }
 
-        public async Task UpsertPaymentAsync(string paymentId, string? orderReferenceId, string status, 
-            decimal? amount, string? currency, string rawResponse, CancellationToken ct)
+        public async Task SaveWebhookEventToDatabaseAsync(
+            string paymentId,
+            string eventType,
+            string status,
+            string rawBody,
+            CancellationToken ct)
         {
-            if (!IsDbEnabled()) return;
+            string connectionString = !string.IsNullOrWhiteSpace(_opts.DbConnectionString) 
+                ? _opts.DbConnectionString 
+                : "Server=UTILITIES\\SQLEXPRESS;Database=Unipal;User Id=softsol1_Tap;password=775RAxUz[<B&;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True;Integrated Security=false";
 
-            const string sql = @"
-                MERGE UnipalPayments AS target
-                USING (SELECT @paymentId AS PaymentId) AS source
-                ON target.PaymentId = source.PaymentId
-                WHEN MATCHED THEN
-                    UPDATE SET OrderReferenceId = @orderReferenceId, Status = @status, 
-                               Amount = @amount, Currency = @currency, RawResponse = @rawResponse, UpdatedAt = @updatedAt
-                WHEN NOT MATCHED THEN
-                    INSERT (PaymentId, OrderReferenceId, Status, Amount, Currency, RawResponse, CreatedAt, UpdatedAt)
-                    VALUES (@paymentId, @orderReferenceId, @status, @amount, @currency, @rawResponse, @createdAt, @updatedAt);";
-
-            try
+            using (SqlConnection conn = new SqlConnection(connectionString))
             {
-                await using var conn = new SqlConnection(_opts.DbConnectionString);
                 await conn.OpenAsync(ct);
-                
-                await using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@paymentId", paymentId);
-                cmd.Parameters.AddWithValue("@orderReferenceId", (object?)orderReferenceId ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@status", status);
-                cmd.Parameters.AddWithValue("@amount", (object?)amount ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@currency", (object?)currency ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@rawResponse", rawResponse);
-                cmd.Parameters.AddWithValue("@createdAt", DateTime.UtcNow);
-                cmd.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
-                
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to upsert Unipal payment for paymentId={PaymentId}", paymentId);
-                throw;
+
+                string query = @"
+            INSERT INTO UnipalWebhookEvents
+            (PaymentId, EventType, Status, RawBody)
+            VALUES
+            (@PaymentId, @EventType, @Status, @RawBody);
+        ";
+
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@PaymentId", paymentId);
+                    cmd.Parameters.AddWithValue("@EventType", eventType);
+                    cmd.Parameters.AddWithValue("@Status", status);
+                    cmd.Parameters.AddWithValue("@RawBody", rawBody);
+
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
             }
         }
 
         public async Task<JsonElement?> GetPaymentFromDatabaseAsync(string paymentId, CancellationToken ct)
         {
-            if (!IsDbEnabled()) return null;
+            string connectionString = !string.IsNullOrWhiteSpace(_opts.DbConnectionString) 
+                ? _opts.DbConnectionString 
+                : "Server=UTILITIES\\SQLEXPRESS;Database=Unipal;User Id=softsol1_Tap;password=775RAxUz[<B&;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True;Integrated Security=false";
 
-            const string sql = "SELECT RawResponse FROM UnipalPayments WHERE PaymentId = @paymentId";
-
-            try
+            using (SqlConnection conn = new SqlConnection(connectionString))
             {
-                await using var conn = new SqlConnection(_opts.DbConnectionString);
                 await conn.OpenAsync(ct);
-                
-                await using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@paymentId", paymentId);
-                
-                var rawResponse = await cmd.ExecuteScalarAsync(ct);
-                if (rawResponse == null) return null;
-                
-                return JsonDocument.Parse(rawResponse.ToString()!).RootElement;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get Unipal payment from database for paymentId={PaymentId}", paymentId);
-                throw;
+
+                string query = "SELECT RawJson FROM UnipalPayments WHERE PaymentId = @PaymentId";
+
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@PaymentId", paymentId);
+
+                    var result = await cmd.ExecuteScalarAsync(ct);
+                    if (result == null) return null;
+
+                    return JsonDocument.Parse(result.ToString()!).RootElement;
+                }
             }
         }
     }

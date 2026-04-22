@@ -43,6 +43,10 @@ builder.Services.Configure<WebSocketAuthOptions>(
 builder.Services.Configure<WebSocketRateLimitOptions>(
     builder.Configuration.GetSection(WebSocketRateLimitOptions.SectionName));
 
+// Bind options for ZKBio 
+builder.Services.Configure<ZKBioOptions>(
+    builder.Configuration.GetSection(ZKBioOptions.SectionName));
+
 // Bind options for Auth Users
 builder.Services.Configure<AuthUsersConfig>(
     builder.Configuration.GetSection("AuthUsers"));
@@ -92,7 +96,9 @@ builder.Services.AddHttpClient<ApplePay.Api.Services.ZatcaClient>((sp, client) =
 .AddTransientHttpErrorPolicy(builder => Polly.Extensions.Http.HttpPolicyExtensions
     .HandleTransientHttpError()
     .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Min(2 * retryAttempt, 10))));
-
+// ZKBioService
+builder.Services.AddHttpClient<ZKBioService>();
+builder.Services.AddScoped<ZKBioService>();
 // Tabby typed HttpClient
 builder.Services.AddHttpClient<TabbyService>((sp, client) =>
 {
