@@ -15,6 +15,26 @@
         public Transaction transaction { get; set; }
         public string version { get; set; }
     }
+
+    public class Device
+    {
+        public string ip { get; set; }
+        public string userAgent { get; set; }
+        public string fingerprint { get; set; }
+    }
+
+    public class SourceOfFunds
+    {
+        public string type { get; set; }
+        public Provided provided { get; set; }
+    }
+
+    public class Provided
+    {
+        public string card { get; set; }
+        public string cardExpiry { get; set; }
+        public string cardScheme { get; set; }
+    }
     public class Acquirer
     {
         public string id { get; set; }
@@ -32,6 +52,13 @@
         public string number { get; set; }
         public string scheme { get; set; }
         public string storedOnFile { get; set; }
+    }
+
+    public class DevicePayment
+    {
+        public string cardNumber { get; set; }
+        public string cardExpiry { get; set; }
+        public string cardSecurityCode { get; set; }
     }
 
     public class Chargeback

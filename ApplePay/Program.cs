@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.OpenApi.Models;
 using Polly;
 using System.Net;
 using System.Net.Http.Headers;
@@ -50,6 +51,10 @@ builder.Services.Configure<ZKBioOptions>(
 // Bind options for Auth Users
 builder.Services.Configure<AuthUsersConfig>(
     builder.Configuration.GetSection("AuthUsers"));
+
+// Bind options for HyperPay
+builder.Services.Configure<ApplePay.Options.HyperPayOptions>(
+    builder.Configuration.GetSection(ApplePay.Options.HyperPayOptions.SectionName));
 
 // Add JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -140,21 +145,33 @@ builder.Services.AddHttpClient<PaymobService>((sp, client) =>
 builder.Services.AddSingleton<ApplePay.Api.Services.IZatcaService, ApplePay.Api.Services.ZatcaService>();
 builder.Services.AddSingleton<IPaymobService, InMemoryPaymobPaymentRepository>();
 
+// HyperPay services
+builder.Services.AddScoped<IHyperPayService, HyperPayService>();
+
 // WebSocket services
 builder.Services.AddSingleton<IWebSocketNotificationService, WebSocketNotificationService>();
 builder.Services.AddSingleton<WebSocketHandler>();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.CustomSchemaIds(t => t.FullName);
-});
-builder.Services.Configure<CredimaxOptions>(
-    builder.Configuration.GetSection(CredimaxOptions.SectionName));
+
 // ✅ Controllers + JSON enum converter
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
+
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo 
+    { 
+        Title = "Apple Pay API", 
+        Version = "v1",
+        Description = "Apple Pay integration with HyperPay payment gateway"
+    });
+    c.CustomSchemaIds(type => type.FullName);
+});
+
+builder.Services.Configure<CredimaxOptions>(
+    builder.Configuration.GetSection(CredimaxOptions.SectionName));
 
 // ✅ CORS (allow all origins, methods, headers)
 builder.Services.AddCors(options =>
@@ -169,6 +186,30 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    ServeUnknownFileTypes = true, 
+    DefaultContentType = "text/plain"
+});
+
+// Apple Pay domain verification endpoint
+app.MapGet("/.well-known/apple-developer-merchantid-domain-association", async (HttpContext context) =>
+{
+    var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", ".well-known", "apple-developer-merchantid-domain-association");
+    
+    if (File.Exists(filePath))
+    {
+        var content = await File.ReadAllTextAsync(filePath);
+        context.Response.ContentType = "text/plain";
+        await context.Response.WriteAsync(content);
+    }
+    else
+    {
+        context.Response.StatusCode = 404;
+        await context.Response.WriteAsync("Apple Pay domain verification file not found");
+    }
+});
 
 using (var scope = app.Services.CreateScope())
 {

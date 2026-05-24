@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyperPay Apple Pay Test</title>
+    <script src="https://applepay.cdn-apple.com/jsapi/v1/apple-pay-sdk.js"></script>
+    <script>
+        // Check if Apple Pay SDK loaded properly
+        window.addEventListener('load', function() {
+            console.log('Page loaded, checking Apple Pay availability...');
+            
+            // Wait a moment for Apple Pay SDK to initialize
+            setTimeout(function() {
+                if (window.ApplePaySession) {
+                    console.log('Apple Pay SDK loaded successfully');
+                } else {
+                    console.log('Apple Pay SDK not loaded');
+                    const button = document.getElementById('apple-pay-button');
+                    const status = document.getElementById('status');
+                    const debug = document.getElementById('debug-info');
+                    
+                    if (button) button.style.display = 'none';
+                    if (status) {
+                        status.innerHTML = `
+                            <div class="status error">
+                                <strong>Apple Pay Not Available</strong><br>
+                                This device or browser doesn't support Apple Pay.<br><br>
+                                <strong>Requirements:</strong><br>
+                                • Safari browser on Apple device<br>
+                                • iPhone/iPad with iOS 10+<br>
+                                • Mac with macOS Sierra+<br>
+                                • Apple Pay enabled in device settings<br><br>
+                                • Active cards in Apple Wallet<br><br>
+                                <small>Please try using Safari on an Apple device.</small>
+                            </div>
+                        `;
+                        status.style.display = 'block';
+                    }
+                    if (debug) {
+                        debug.innerHTML = '<div>[ERROR] Apple Pay SDK not available - Requirements not met</div>';
+                        debug.style.display = 'block';
+                    }
+                }
+            }, 1000);
+        });
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .product-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .product-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .product-price {
+            font-size: 28px;
+            font-weight: bold;
+            color: #007AFF;
+        }
+
+        .apple-pay-button {
+            -webkit-appearance: -apple-pay-button;
+            -apple-pay-button-type: plain;
+            -apple-pay-button-style: black;
+            height: 48px;
+            width: 100%;
+            max-width: 300px;
+            margin: 20px 0;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .apple-pay-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+
+        .apple-pay-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 12px;
+            font-weight: 500;
+            display: none;
+        }
+
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .payment-details {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 14px;
+            display: none;
+        }
+
+        .payment-details h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .payment-details p {
+            margin: 5px 0;
+            color: #666;
+        }
+
+        .debug-info {
+            background: #f1f3f4;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 12px;
+            color: #666;
+            display: none;
+        }
+
+        .spinner {
+            display: none;
+            margin: 20px auto;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007AFF;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">HyperPay Test</div>
+        <div class="subtitle">Apple Pay Integration Demo</div>
+        
+        <div class="product-info">
+            <div class="product-name">Premium Test Product</div>
+            <div class="product-price">SAR 1.00</div>
+        </div>
+        
+        <button id="apple-pay-button" class="apple-pay-button" style="display: none;">
+            Pay with Apple Pay
+        </button>
+        
+        <div id="hyperpay-widget-container" style="display: none; margin-top: 20px;"></div>
+        
+        <div class="spinner" id="spinner"></div>
+        
+        <div id="status" class="status"></div>
+        
+        <div id="payment-details" class="payment-details">
+            <h4>Payment Details</h4>
+            <p><strong>Payment ID:</strong> <span id="payment-id"></span></p>
+            <p><strong>Transaction ID:</strong> <span id="transaction-id"></span></p>
+            <p><strong>Status:</strong> <span id="payment-status"></span></p>
+            <p><strong>Amount:</strong> <span id="payment-amount"></span></p>
+            <p><strong>Timestamp:</strong> <span id="payment-timestamp"></span></p>
+        </div>
+        
+        <div id="debug-info" class="debug-info">
+            <h4>Debug Information</h4>
+            <div id="debug-content"></div>
+        </div>
+        
+        <div class="footer">
+            <p>HyperPay Apple Pay Integration Test</p>
+            <p>Merchant ID: merchant.com.tamarran.nonstop</p>
+        </div>
+    </div>
+
+    <script>
+        class HyperPayApplePayTest {
+            constructor() {
+                this.merchantIdentifier = 'merchant.com.tamarran.nonstop';
+                this.merchantName = 'HyperPay Test Store';
+                this.countryCode = 'SA';
+                this.currencyCode = 'SAR';
+                this.amount = 1.00;
+                this.init();
+            }
+
+            async init() {
+                this.showStatus('Initializing Apple Pay...', 'info');
+                this.showDebug('Starting Apple Pay initialization...');
+
+                // First check server configuration
+                await this.checkServerConfig();
+
+                // Check if Apple Pay is available
+                if (!window.ApplePaySession) {
+                    this.showStatus('Apple Pay is not supported on this device', 'error');
+                    this.showDebug('Apple Pay SDK not available');
+                    this.showDebug('Requirements: Safari browser on Apple device (iPhone/iPad/Mac)');
+                    return;
+                }
+
+                try {
+                    // Check if Apple Pay is available for this merchant
+                    const canMakePayments = await ApplePaySession.canMakePaymentsWithActiveCard(this.merchantIdentifier);
+                    
+                    if (canMakePayments) {
+                        this.showStatus('Apple Pay is ready', 'success');
+                        this.setupApplePayButton();
+                        this.showDebug('Apple Pay is available and ready to use');
+                        this.showDebug('Device supports Apple Pay and has active cards');
+                    } else {
+                        this.showStatus('No active cards available for this merchant', 'info');
+                        this.showDebug('No active Apple Pay cards found for merchant: ' + this.merchantIdentifier);
+                        this.showDebug('User may need to add cards to Apple Wallet first');
+                    }
+                } catch (error) {
+                    console.error('Error checking Apple Pay availability:', error);
+                    this.showStatus('Error initializing Apple Pay', 'error');
+                    this.showDebug('Error: ' + error.message);
+                }
+            }
+
+            async checkServerConfig() {
+                try {
+                    this.showDebug('Checking server configuration...');
+                    const response = await fetch('/api/hyperpay/applepay/config');
+                    const result = await response.json();
+                    
+                    const cfg = result.config || {};
+                    const merchantId = cfg.merchantId ?? cfg.MerchantId;
+                    const baseUrl = cfg.baseUrl ?? cfg.BaseUrl;
+                    const entityId = cfg.entityId ?? cfg.EntityId;
+                    const currentDomain = cfg.currentDomain ?? cfg.CurrentDomain ?? '';
+                    const fullDomain = cfg.fullDomain ?? cfg.FullDomain;
+                    const isTestMode = cfg.isTestMode ?? cfg.IsTestMode;
+
+                    if (result.success) {
+                        this.showDebug('Server Configuration:');
+                        this.showDebug('Merchant ID: ' + merchantId);
+                        this.showDebug('Base URL: ' + baseUrl);
+                        this.showDebug('Entity ID: ' + entityId);
+                        this.showDebug('Current Domain: ' + currentDomain);
+                        this.showDebug('Full Domain: ' + fullDomain);
+                        this.showDebug('Is Test Mode: ' + isTestMode);
+                        
+                        if (currentDomain && currentDomain !== 'localhost:5001' && 
+                            !currentDomain.includes('applepay.tamarran.com')) {
+                            this.showDebug('WARNING: Domain may not be verified with Apple Pay');
+                        }
+                    } else {
+                        this.showDebug('Failed to get server configuration: ' + result.message);
+                    }
+                } catch (error) {
+                    this.showDebug('Error checking server configuration: ' + error.message);
+                }
+            }
+
+            setupApplePayButton() {
+                const button = document.getElementById('apple-pay-button');
+                button.style.display = 'block';
+                button.addEventListener('click', () => this.startApplePayPayment());
+            }
+
+            async startApplePayPayment() {
+                try {
+                    this.showStatus('Creating HyperPay checkout...', 'loading');
+                    this.showSpinner(true);
+                    this.showDebug('Creating HyperPay COPYandPAY checkout for Apple Pay...');
+
+                    const response = await fetch('/api/hyperpay/applepay/checkout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            amount: this.amount,
+                            currency: this.currencyCode,
+                            paymentType: 'DB',
+                            customerEmail: '',
+                            customerName: ''
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok || !result.success) {
+                        throw new Error(result.error || result.message || 'Failed to create HyperPay checkout');
+                    }
+
+                    this.showDebug('HyperPay checkout created: ' + result.checkoutId);
+                    this.renderHyperPayWidget(result);
+                    this.showStatus('Apple Pay is ready. Complete payment in the HyperPay widget.', 'success');
+                    this.showSpinner(false);
+                    
+                } catch (error) {
+                    console.error('HyperPay checkout error:', error);
+                    this.showStatus('HyperPay Apple Pay checkout failed', 'error');
+                    this.showSpinner(false);
+                    this.showDebug('Error creating HyperPay checkout: ' + error.message);
+                }
+            }
+
+            renderHyperPayWidget(checkout) {
+                const button = document.getElementById('apple-pay-button');
+                const container = document.getElementById('hyperpay-widget-container');
+
+                button.style.display = 'none';
+                container.innerHTML = '';
+                container.style.display = 'block';
+
+                const form = document.createElement('form');
+                form.action = checkout.shopperResultUrl;
+                form.className = 'paymentWidgets';
+                form.setAttribute('data-brands', 'APPLEPAY');
+                container.appendChild(form);
+
+                const script = document.createElement('script');
+                script.src = checkout.widgetUrl;
+                if (checkout.integrity) {
+                    script.integrity = checkout.integrity;
+                    script.crossOrigin = 'anonymous';
+                }
+                script.onload = () => this.showDebug('HyperPay Apple Pay widget loaded');
+                script.onerror = () => this.showDebug('Failed to load HyperPay Apple Pay widget');
+                document.body.appendChild(script);
+            }
+
+            showStatus(message, type) {
+                const statusDiv = document.getElementById('status');
+                statusDiv.textContent = message;
+                statusDiv.className = `status ${type}`;
+                statusDiv.style.display = 'block';
+            }
+
+            showSpinner(show) {
+                const spinner = document.getElementById('spinner');
+                spinner.style.display = show ? 'block' : 'none';
+            }
+
+            showPaymentDetails(paymentResult) {
+                const detailsDiv = document.getElementById('payment-details');
+                document.getElementById('payment-id').textContent = paymentResult.paymentId || 'N/A';
+                document.getElementById('transaction-id').textContent = paymentResult.merchantTransactionId || 'N/A';
+                document.getElementById('payment-status').textContent = 'Success';
+                document.getElementById('payment-amount').textContent = `${this.currencyCode} ${this.amount}`;
+                document.getElementById('payment-timestamp').textContent = new Date().toLocaleString();
+                detailsDiv.style.display = 'block';
+            }
+
+            showDebug(message) {
+                const debugDiv = document.getElementById('debug-info');
+                const debugContent = document.getElementById('debug-content');
+                const timestamp = new Date().toLocaleTimeString();
+                debugContent.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                debugDiv.style.display = 'block';
+            }
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            new HyperPayApplePayTest();
+        });
+    </script>
+</body>
+</html>
