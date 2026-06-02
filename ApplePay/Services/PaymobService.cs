@@ -26,6 +26,11 @@ namespace ApplePay.Services
 
         public async Task<JsonElement> CreateIntentionAsync(JsonElement payload, string secretKey, string publicKey, CancellationToken ct)
         {
+            return await CreateIntentionAsync(payload, secretKey, publicKey, null, ct);
+        }
+
+        public async Task<JsonElement> CreateIntentionAsync(JsonElement payload, string secretKey, string publicKey, string? apiKey, CancellationToken ct)
+        {
             var path = string.IsNullOrWhiteSpace(_opts.IntentionPath)
            ? "/v1/intention/"
            : (_opts.IntentionPath!.StartsWith("/") ? _opts.IntentionPath : "/" + _opts.IntentionPath);
@@ -36,7 +41,9 @@ namespace ApplePay.Services
             };
 
             if (!string.IsNullOrWhiteSpace(secretKey))
+            {
                 req.Headers.Authorization = new AuthenticationHeaderValue("Token", secretKey);
+            }
 
             using var resp = await _http.SendAsync(req, ct);
             var json = await resp.Content.ReadAsStringAsync(ct);
@@ -49,7 +56,7 @@ namespace ApplePay.Services
 
             // Build redirect URL
             string clientSecret = root.GetProperty("client_secret").GetString()!;
-            string redirectUrl = $"https://accept.paymob.com/unifiedcheckout/?publicKey={publicKey}&clientSecret={clientSecret}";
+            string redirectUrl = $"{_opts.BaseUrl}/unifiedcheckout/?publicKey={publicKey}&clientSecret={clientSecret}";
 
             var dictionary = new Dictionary<string, object>();
             foreach (var prop in root.EnumerateObject())
@@ -59,6 +66,23 @@ namespace ApplePay.Services
 
             string modifiedJson = JsonSerializer.Serialize(dictionary);
             return JsonDocument.Parse(modifiedJson).RootElement.Clone();
+        }
+
+        private async Task<string> GetAuthTokenAsync(string apiKey, CancellationToken ct)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, _opts.BaseUrl + "/api/auth/tokens")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { api_key = apiKey }), Encoding.UTF8, "application/json")
+            };
+
+            using var resp = await _http.SendAsync(req, ct);
+            var json = await resp.Content.ReadAsStringAsync(ct);
+
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"Paymob Auth API {(int)resp.StatusCode}: {json}");
+
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("token").GetString()!;
         }
         public async Task<JsonElement> VoidRefundAsync(string transactionId, string secretKey, CancellationToken ct)
         {

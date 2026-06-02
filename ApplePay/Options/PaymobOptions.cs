@@ -9,5 +9,6 @@
         public string? VoidUrl { get; set; }
         public string? RefundUrl { get; set; }
         public string? CaptureUrl { get; set; }
+        public int CardIntegrationId { get; set; }
     }
 }
