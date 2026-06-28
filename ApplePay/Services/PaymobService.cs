@@ -14,38 +14,50 @@ namespace ApplePay.Services
     public sealed class PaymobService
     {
         private readonly HttpClient _http;
+        private readonly IHttpClientFactory _factory;
         private readonly PaymobOptions _opts;
         private readonly IPaymobService _payments;
 
-        public PaymobService(HttpClient http, IOptions<PaymobOptions> opts, IPaymobService payments)
+        public PaymobService(HttpClient http, IHttpClientFactory factory, IOptions<PaymobOptions> opts, IPaymobService payments)
         {
             _http = http;
+            _factory = factory;
             _opts = opts.Value;
             _payments = payments;
         }
 
         public async Task<JsonElement> CreateIntentionAsync(JsonElement payload, string secretKey, string publicKey, CancellationToken ct)
         {
-            return await CreateIntentionAsync(payload, secretKey, publicKey, null, ct);
+            return await CreateIntentionAsync(payload, secretKey, publicKey, null, null, ct);
         }
 
         public async Task<JsonElement> CreateIntentionAsync(JsonElement payload, string secretKey, string publicKey, string? apiKey, CancellationToken ct)
         {
+            return await CreateIntentionAsync(payload, secretKey, publicKey, apiKey, null, ct);
+        }
+
+        public async Task<JsonElement> CreateIntentionAsync(JsonElement payload, string secretKey, string publicKey, string? apiKey, string? baseUrlOverride, CancellationToken ct)
+        {
+            var baseUrl = string.IsNullOrWhiteSpace(baseUrlOverride) ? _opts.BaseUrl!.TrimEnd('/') : baseUrlOverride.TrimEnd('/');
+
             var path = string.IsNullOrWhiteSpace(_opts.IntentionPath)
            ? "/v1/intention/"
            : (_opts.IntentionPath!.StartsWith("/") ? _opts.IntentionPath : "/" + _opts.IntentionPath);
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, _opts.BaseUrl + path)
+            using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl + path)
             {
                 Content = new StringContent(payload.GetRawText(), Encoding.UTF8, "application/json")
             };
+
+            // Use a fresh client (no BaseAddress) when an override URL is provided
+            var client = string.IsNullOrWhiteSpace(baseUrlOverride) ? _http : _factory.CreateClient();
 
             if (!string.IsNullOrWhiteSpace(secretKey))
             {
                 req.Headers.Authorization = new AuthenticationHeaderValue("Token", secretKey);
             }
 
-            using var resp = await _http.SendAsync(req, ct);
+            using var resp = await client.SendAsync(req, ct);
             var json = await resp.Content.ReadAsStringAsync(ct);
 
             if (!resp.IsSuccessStatusCode)
@@ -56,7 +68,7 @@ namespace ApplePay.Services
 
             // Build redirect URL
             string clientSecret = root.GetProperty("client_secret").GetString()!;
-            string redirectUrl = $"{_opts.BaseUrl}/unifiedcheckout/?publicKey={publicKey}&clientSecret={clientSecret}";
+            string redirectUrl = $"{baseUrl}/unifiedcheckout/?publicKey={publicKey}&clientSecret={clientSecret}";
 
             var dictionary = new Dictionary<string, object>();
             foreach (var prop in root.EnumerateObject())
@@ -68,14 +80,14 @@ namespace ApplePay.Services
             return JsonDocument.Parse(modifiedJson).RootElement.Clone();
         }
 
-        private async Task<string> GetAuthTokenAsync(string apiKey, CancellationToken ct)
+        private async Task<string> GetAuthTokenAsync(string apiKey, string baseUrl, HttpClient client, CancellationToken ct)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, _opts.BaseUrl + "/api/auth/tokens")
+            using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/api/auth/tokens")
             {
                 Content = new StringContent(JsonSerializer.Serialize(new { api_key = apiKey }), Encoding.UTF8, "application/json")
             };
 
-            using var resp = await _http.SendAsync(req, ct);
+            using var resp = await client.SendAsync(req, ct);
             var json = await resp.Content.ReadAsStringAsync(ct);
 
             if (!resp.IsSuccessStatusCode)

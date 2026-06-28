@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paymob Apple Pay Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .product-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .product-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .product-price {
+            font-size: 28px;
+            font-weight: bold;
+            color: #007AFF;
+        }
+
+        .pay-button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            max-width: 300px;
+            margin: 20px 0;
+        }
+
+        .pay-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,122,255,0.3);
+        }
+
+        .pay-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 12px;
+            font-weight: 500;
+            display: none;
+        }
+
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .debug-info {
+            background: #f1f3f4;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 12px;
+            color: #666;
+            display: none;
+        }
+
+        .spinner {
+            display: none;
+            margin: 20px auto;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007AFF;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">Paymob Payment POC</div>
+        <div class="subtitle">Test Paymob Card payment gateway — KSA &amp; Egypt</div>
+        
+        <div class="product-info">
+            <div class="product-name">Paymob Test Product</div>
+            <div class="product-price">1.00</div>
+        </div>
+
+        <button id="ksa-card-button" class="pay-button">
+            Test Card — KSA (SAR)
+        </button>
+
+        <button id="egy-card-button" class="pay-button" style="background:#34c759;">
+            Live Card — Egypt (EGP)
+        </button>
+        
+        <div class="spinner" id="spinner"></div>
+        
+        <div id="status" class="status"></div>
+        
+        <div id="debug-info" class="debug-info">
+            <h4>Debug Information</h4>
+            <div id="debug-content"></div>
+        </div>
+        
+        <div class="footer">
+            <p>Paymob Payment Gateway POC</p>
+            <p>Enter your Integration IDs in the fields above</p>
+        </div>
+    </div>
+
+    <script>
+        class PaymobPaymentTest {
+            constructor() {
+                this.currencyCode = 'SAR';
+                this.amount = 100;
+                this.init();
+            }
+
+            init() {
+                this.showStatus('Ready to pay', 'info');
+                this.showDebug('Paymob payment gateway POC loaded');
+
+                document.getElementById('ksa-card-button').addEventListener('click', () => this.startPayment('ksa'));
+                document.getElementById('egy-card-button').addEventListener('click', () => this.startPayment('egy'));
+            }
+
+            getConfig(region) {
+                if (region === 'ksa') return {
+                    label: 'KSA Card',
+                    secretKey: 'sau_sk_test_509c9f894b8e37a9911683d7b493c4646ac92e78089f344149910b2bc912277a',
+                    publicKey: 'sau_pk_test_arPQMbBU8yZy90V8nnRkuTk2chIx75tz',
+                    apiKey: 'ZXlKaGJHY2lPaUpJVXpVeE1pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SmpiR0Z6Y3lJNklrMWxjbU5vWVc1MElpd2ljSEp2Wm1sc1pWOXdheUk2TVRZNE5UVXNJbTVoYldVaU9pSnBibWwwYVdGc0luMC41Yk1WQVozVzE2Smc3eVBTNnB2Z2w3M3E1X2RQa3cxMEdjOEJZOFM5QVpDdkEySDhvQWo0MzdidHhkaU52UUEtWGtEV3NpX3ZabWlxSEg0aGpWdGRCQQ==',
+                    baseUrl: null,
+                    integrationId: null,
+                    currency: 'SAR',
+                    amount: 100,
+                    phone: '+966500000000'
+                };
+                return {
+                    label: 'Egypt Card (Live)',
+                    secretKey: 'egy_sk_live_3ad2a4ae9ef1a97660f194be1060c78c126c53abb635315005369a97326ee3f8',
+                    publicKey: 'egy_pk_live_e7DRqcTESj3Zh9xw6zxanIAPr7E1LRC1',
+                    apiKey: 'ZXlKaGJHY2lPaUpJVXpVeE1pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SmpiR0Z6Y3lJNklrMWxjbU5vWVc1MElpd2ljSEp2Wm1sc1pWOXdheUk2TVRBNU5EY3hPQ3dpYm1GdFpTSTZJbWx1YVhScFlXd2lmUS54VUN0M1RRWERqODE3amZSY2wzWjNWeHpPMkNEN29kU2t0eUlRLTRMODdRTDhmemFOVUtRdnVDV2w4blRpNHFjRU1XQVlySHBCRlNnaUhSSFF1WHdHdw==',
+                    baseUrl: 'https://accept.paymob.com',
+                    integrationId: '5497489',
+                    currency: 'EGP',
+                    amount: 2000,
+                    phone: '+201000000000'
+                };
+            }
+
+            async startPayment(region) {
+                const cfg = this.getConfig(region);
+                try {
+                    this.showStatus('Creating ' + cfg.label + ' payment intention...', 'loading');
+                    this.showSpinner(true);
+                    this.showDebug('Calling Paymob API for ' + cfg.label + '...');
+
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'X-Paymob-SecretKey': cfg.secretKey,
+                        'X-Paymob-PublicKey': cfg.publicKey,
+                        'X-Paymob-ApiKey': cfg.apiKey
+                    };
+                    if (cfg.baseUrl)      headers['X-Paymob-BaseUrl']      = cfg.baseUrl;
+                    if (cfg.integrationId) headers['X-Paymob-IntegrationId'] = cfg.integrationId;
+
+                    const response = await fetch('/api/paymob/applepay/create-intention', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            amount: cfg.amount,
+                            currency: cfg.currency,
+                            email: 'test@example.com',
+                            firstName: 'Test',
+                            lastName: 'User',
+                            phone: cfg.phone
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok || !result.success) {
+                        throw new Error(result.error || result.message || 'Failed to create intention');
+                    }
+
+                    this.showDebug('Intention created successfully');
+                    this.showDebug('Redirect URL: ' + result.redirectUrl);
+                    
+                    this.showStatus('Redirecting to Paymob checkout...', 'success');
+                    this.showSpinner(false);
+
+                    // Redirect to Paymob unified checkout
+                    setTimeout(() => {
+                        window.location.href = result.redirectUrl;
+                    }, 1500);
+
+                } catch (error) {
+                    console.error('Payment error:', error);
+                    this.showStatus('Failed to create payment', 'error');
+                    this.showSpinner(false);
+                    this.showDebug('Error: ' + error.message);
+                }
+            }
+
+            showStatus(message, type) {
+                const statusDiv = document.getElementById('status');
+                statusDiv.textContent = message;
+                statusDiv.className = 'status ' + type;
+                statusDiv.style.display = 'block';
+            }
+
+            showSpinner(show) {
+                document.getElementById('spinner').style.display = show ? 'block' : 'none';
+            }
+
+            showDebug(message) {
+                const debugDiv = document.getElementById('debug-info');
+                const debugContent = document.getElementById('debug-content');
+                const timestamp = new Date().toLocaleTimeString();
+                debugContent.innerHTML += '<div>[' + timestamp + '] ' + message + '</div>';
+                debugDiv.style.display = 'block';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            new PaymobPaymentTest();
+        });
+    </script>
+</body>
+</html>
